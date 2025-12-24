@@ -1,0 +1,7 @@
+{
+  "name": "Delivora - Omni-Delivery System",
+  "description": "A comprehensive delivery platform with specialized interfaces for Administrators, Merchants, Drivers, and Customers, featuring real-time state management and a modern React UI.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
