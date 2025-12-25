@@ -1,5 +1,5 @@
 
-import { Shop, Order, OrderStatus, UserRole } from './types';
+import { Shop, Order, OrderStatus, UserRole, ServiceType, PaymentMethod } from './types';
 
 export const MOCK_SHOPS: Shop[] = [
   {
@@ -8,6 +8,7 @@ export const MOCK_SHOPS: Shop[] = [
     category: 'Hambúrgueres',
     rating: 4.8,
     image: 'https://picsum.photos/seed/burger/400/300',
+    location: { lat: -23.5505, lng: -46.6333 },
     menu: [
       { id: 'm1', name: 'Supernova Burger', description: 'Carne 200g, queijo cheddar, bacon crocante.', price: 35.90, image: 'https://picsum.photos/seed/m1/200/200' },
       { id: 'm2', name: 'Meteor Fries', description: 'Batatas com páprica e molho especial.', price: 18.00, image: 'https://picsum.photos/seed/m2/200/200' },
@@ -19,6 +20,7 @@ export const MOCK_SHOPS: Shop[] = [
     category: 'Pizzas',
     rating: 4.5,
     image: 'https://picsum.photos/seed/pizza/400/300',
+    location: { lat: -23.5595, lng: -46.6433 },
     menu: [
       { id: 'm3', name: 'Margherita Clássica', description: 'Molho de tomate, mussarela e manjericão.', price: 45.00, image: 'https://picsum.photos/seed/m3/200/200' },
       { id: 'm4', name: 'Pepperoni Blast', description: 'Pepperoni, mussarela e orégano.', price: 52.00, image: 'https://picsum.photos/seed/m4/200/200' },
@@ -30,6 +32,7 @@ export const MOCK_SHOPS: Shop[] = [
     category: 'Japonesa',
     rating: 4.9,
     image: 'https://picsum.photos/seed/sushi/400/300',
+    location: { lat: -23.5455, lng: -46.6233 },
     menu: [
       { id: 'm5', name: 'Combo Salmão 20 pçs', description: 'Sashimis, nigiris e uramakis de salmão.', price: 89.90, image: 'https://picsum.photos/seed/m5/200/200' },
     ]
@@ -39,17 +42,23 @@ export const MOCK_SHOPS: Shop[] = [
 export const MOCK_ORDERS: Order[] = [
   {
     id: 'ORD-001',
+    type: ServiceType.FOOD,
     shopId: 's1',
     shopName: 'Burger Galaxy',
     userId: 'u1',
     userName: 'Carlos Silva',
     items: [{ menuItemId: 'm1', quantity: 2, name: 'Supernova Burger', price: 35.90 }],
     total: 71.80,
-    status: OrderStatus.PREPARING,
+    status: OrderStatus.READY,
     createdAt: new Date().toISOString(),
+    location: { lat: -23.5505, lng: -46.6333 },
+    // Fix: Added missing required payment properties to match Order interface
+    paymentMethod: PaymentMethod.CREDIT_CARD,
+    paymentStatus: 'PAID',
   },
   {
     id: 'ORD-002',
+    type: ServiceType.FOOD,
     shopId: 's2',
     shopName: 'Pizza Planet',
     userId: 'u2',
@@ -58,5 +67,9 @@ export const MOCK_ORDERS: Order[] = [
     total: 45.00,
     status: OrderStatus.PENDING,
     createdAt: new Date().toISOString(),
+    location: { lat: -23.5595, lng: -46.6433 },
+    // Fix: Added missing required payment properties to match Order interface
+    paymentMethod: PaymentMethod.CREDIT_CARD,
+    paymentStatus: 'PAID',
   }
 ];
