@@ -1,6 +1,6 @@
 {
-  "name": "Delivora - Omni-Delivery System",
-  "description": "A comprehensive delivery platform with specialized interfaces for Administrators, Merchants, Drivers, and Customers, featuring real-time state management and a modern React UI.",
+  "name": "Duarte Delivery - Omni-Delivery System",
+  "description": "Uma plataforma de entrega abrangente com interfaces especializadas para Administradores, Lojistas, Motoristas e Clientes.",
   "requestFramePermissions": [
     "geolocation",
     "camera",

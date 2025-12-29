@@ -63,9 +63,9 @@ export const geminiService = {
   async getNearbyRecommendations(lat: number, lng: number) {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      // Use the correct alias for gemini flash as per guidelines
+      // Fix: Maps grounding is specifically supported in 2.5 series
       const response = await ai.models.generateContent({
-        model: "gemini-flash-latest",
+        model: "gemini-2.5-flash",
         contents: "Quais são os 3 melhores estabelecimentos comerciais ou pontos de interesse nestas coordenadas? Liste como tópicos curtos com links.",
         config: {
           tools: [{ googleMaps: {} }],

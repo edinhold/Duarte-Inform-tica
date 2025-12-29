@@ -112,7 +112,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ isOpen, onClose }) => {
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
-          systemInstruction: 'Você é um assistente de voz do Delivora. Ajude o usuário a navegar no app, fazer pedidos ou tirar dúvidas de entrega de forma amigável.'
+          systemInstruction: 'Você é um assistente de voz do Duarte Delivery. Ajude o usuário a navegar no app, fazer pedidos ou tirar dúvidas de entrega de forma amigável e eficiente.'
         }
       });
 
@@ -133,18 +133,18 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[150] flex items-center justify-center p-6">
-      <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 text-center space-y-8 shadow-2xl animate-in zoom-in duration-300">
+    <div className="fixed inset-0 bg-indigo-950/60 backdrop-blur-md z-[150] flex items-center justify-center p-6">
+      <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 text-center space-y-8 shadow-2xl animate-in zoom-in duration-300 border border-indigo-100">
         <div className="flex justify-between items-center">
-          <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Delivora Voice</span>
-          <button onClick={onClose} className="text-gray-300 hover:text-gray-900 transition-colors">✕</button>
+          <span className="text-xs font-bold text-indigo-300 uppercase tracking-widest">Duarte Voice</span>
+          <button onClick={onClose} className="text-indigo-200 hover:text-indigo-900 transition-colors">✕</button>
         </div>
         
         <div className="relative flex justify-center py-10">
           <div className={`absolute inset-0 bg-indigo-500/20 rounded-full blur-3xl animate-pulse ${isActive ? 'scale-150' : 'scale-0'}`}></div>
           <button 
             onClick={isActive ? stopSession : startSession}
-            className={`relative w-24 h-24 rounded-full flex items-center justify-center transition-all duration-500 shadow-xl ${isActive ? 'bg-red-500 scale-110' : 'bg-indigo-600 hover:scale-105'}`}
+            className={`relative w-24 h-24 rounded-full flex items-center justify-center transition-all duration-500 shadow-xl ${isActive ? 'bg-red-500 scale-110' : 'bg-indigo-600 hover:scale-105 shadow-indigo-200'}`}
           >
             {isActive ? (
               <div className="flex gap-1">
@@ -159,13 +159,13 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ isOpen, onClose }) => {
         </div>
 
         <div>
-          <h3 className="text-2xl font-black text-gray-900 mb-2">{status}</h3>
-          <p className="text-sm text-gray-500">Toque no ícone para conversar com a Delivora em tempo real.</p>
+          <h3 className="text-2xl font-black text-indigo-950 mb-2">{status}</h3>
+          <p className="text-sm text-indigo-400 font-medium">Toque para conversar com a Duarte Voice em tempo real.</p>
         </div>
 
-        <div className="bg-gray-50 p-4 rounded-3xl">
+        <div className="bg-indigo-50/50 p-4 rounded-3xl border border-indigo-100">
            <p className="text-xs font-bold text-indigo-600 mb-1">Dica:</p>
-           <p className="text-[10px] text-gray-400 italic">"Delivora, onde está meu hambúrguer?" ou "Procure pizzarias abertas agora"</p>
+           <p className="text-[10px] text-indigo-400 italic">"Duarte, onde está minha entrega?" ou "Verifique o status do pedido #123"</p>
         </div>
       </div>
     </div>

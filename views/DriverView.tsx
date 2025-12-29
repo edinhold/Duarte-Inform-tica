@@ -1,11 +1,14 @@
 
-import React, { useState, useEffect } from 'react';
-import { Order, OrderStatus, ServiceType, Location } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Order, OrderStatus, ServiceType, Location, PaymentMethod, ApiSettings } from '../types';
 import { TruckIcon, UserIcon, StoreIcon, MapPinIcon } from '../components/Icons';
 import { geminiService } from '../services/geminiService';
+import MapView from '../components/MapView';
 
 interface DriverViewProps {
   orders: Order[];
+  currentDriverId: string;
+  paymentSettings: ApiSettings;
   onAcceptOrder: (orderId: string) => void;
   onUpdateStatus: (orderId: string, status: OrderStatus) => void;
 }
@@ -14,34 +17,26 @@ interface RouteStop {
   orderId: string;
   type: 'PICKUP' | 'DROPOFF';
   label: string;
+  subLabel: string;
   location: Location;
   distanceFromPrev: number;
+  serviceType: ServiceType;
 }
 
-const DriverView: React.FC<DriverViewProps> = ({ orders, onAcceptOrder, onUpdateStatus }) => {
+const DriverView: React.FC<DriverViewProps> = ({ orders, currentDriverId, paymentSettings, onAcceptOrder, onUpdateStatus }) => {
   const [driverCoords, setDriverCoords] = useState<Location | null>(null);
   const [isLocating, setIsLocating] = useState(false);
-  const [locationError, setLocationError] = useState<string | null>(null);
   const [optimizedRoute, setOptimizedRoute] = useState<RouteStop[]>([]);
   const [routeBriefing, setRouteBriefing] = useState<string>('');
 
   const requestLocation = () => {
     setIsLocating(true);
-    setLocationError(null);
-    if (!navigator.geolocation) {
-      setLocationError("Geolocalização não suportada.");
-      setIsLocating(false);
-      return;
-    }
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setDriverCoords({ lat: position.coords.latitude, lng: position.coords.longitude });
         setIsLocating(false);
       },
-      (error) => {
-        setLocationError("Erro ao acessar GPS. Verifique as permissões.");
-        setIsLocating(false);
-      },
+      () => setIsLocating(false),
       { enableHighAccuracy: true }
     );
   };
@@ -55,167 +50,200 @@ const DriverView: React.FC<DriverViewProps> = ({ orders, onAcceptOrder, onUpdate
     return R * c;
   };
 
-  const optimizeRoute = async () => {
-    if (!driverCoords) {
-      alert("Ative seu GPS primeiro para otimizar a rota.");
-      return;
-    }
+  const stats = useMemo(() => {
+    const myHistory = orders.filter(o => o.driverId === currentDriverId && (o.status === OrderStatus.DELIVERED || o.status === OrderStatus.COMPLETED));
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const lastWeek = now.getTime() - (7 * 24 * 60 * 60 * 1000);
+    const lastMonth = now.getTime() - (30 * 24 * 60 * 60 * 1000);
+    const commission = paymentSettings.commissionRate / 100;
 
-    const myCurrentOrders = orders.filter(o => o.driverId === 'driver-1' && ![OrderStatus.COMPLETED, OrderStatus.DELIVERED, OrderStatus.CANCELLED].includes(o.status));
-    if (myCurrentOrders.length === 0) return;
+    const calculate = (filtered: Order[]) => {
+      const gross = filtered.reduce((acc, o) => acc + o.total, 0);
+      return { count: filtered.length, revenue: gross, liquid: gross * (1 - commission) };
+    };
+
+    return {
+      day: calculate(myHistory.filter(o => new Date(o.createdAt).getTime() >= today)),
+      week: calculate(myHistory.filter(o => new Date(o.createdAt).getTime() >= lastWeek)),
+      month: calculate(myHistory.filter(o => new Date(o.createdAt).getTime() >= lastMonth))
+    };
+  }, [orders, currentDriverId, paymentSettings.commissionRate]);
+
+  const optimizeRoute = async () => {
+    if (!driverCoords) return;
+    const myCurrentOrders = orders.filter(o => o.driverId === currentDriverId && ![OrderStatus.COMPLETED, OrderStatus.DELIVERED, OrderStatus.CANCELLED].includes(o.status));
+    if (myCurrentOrders.length === 0) { setOptimizedRoute([]); return; }
 
     let stops: RouteStop[] = [];
     myCurrentOrders.forEach(o => {
-      // Se precisa coletar
       if ([OrderStatus.READY, OrderStatus.PENDING, OrderStatus.PREPARING].includes(o.status)) {
+        const isRide = o.type === ServiceType.RIDE;
         stops.push({ 
-          orderId: o.id, 
-          type: 'PICKUP', 
-          label: `Coleta: ${o.shopName || 'Ponto de Partida'}`, 
-          location: o.location || driverCoords,
-          distanceFromPrev: 0
+          orderId: o.id, type: 'PICKUP', 
+          label: isRide ? `Passageiro: ${o.userName}` : `Coleta: ${o.shopName || 'Loja'}`,
+          subLabel: isRide ? "Origem da Viagem" : "Retirada de Pedido",
+          location: o.location || driverCoords, distanceFromPrev: 0, serviceType: o.type
         });
       }
-      // Se já coletou e precisa entregar
       if ([OrderStatus.OUT_FOR_DELIVERY, OrderStatus.IN_TRANSIT].includes(o.status)) {
+        const isRide = o.type === ServiceType.RIDE;
         stops.push({ 
-          orderId: o.id, 
-          type: 'DROPOFF', 
-          label: `Entrega: ${o.type === ServiceType.RIDE ? 'Destino Passageiro' : o.userName}`, 
-          location: o.destinationLocation || o.location || driverCoords,
-          distanceFromPrev: 0
+          orderId: o.id, type: 'DROPOFF', 
+          label: isRide ? `Destino de ${o.userName}` : `Entrega: ${o.userName}`,
+          subLabel: isRide ? "Final da Viagem" : (o.parcelDetails?.destination || "Endereço do Cliente"),
+          location: o.destinationLocation || o.location || driverCoords, distanceFromPrev: 0, serviceType: o.type
         });
       }
     });
 
-    // Heurística Nearest Neighbor
+    if (stops.length === 0) { setOptimizedRoute([]); return; }
+
     let finalRoute: RouteStop[] = [];
     let currentPos = driverCoords;
     let remainingStops = [...stops];
-
     while (remainingStops.length > 0) {
       let nearestIdx = 0;
       let minDistance = calculateDistance(currentPos, remainingStops[0].location);
-
       for (let i = 1; i < remainingStops.length; i++) {
         const dist = calculateDistance(currentPos, remainingStops[i].location);
-        if (dist < minDistance) {
-          minDistance = dist;
-          nearestIdx = i;
-        }
+        if (dist < minDistance) { minDistance = dist; nearestIdx = i; }
       }
-
       const nextStop = remainingStops.splice(nearestIdx, 1)[0];
       nextStop.distanceFromPrev = minDistance;
       finalRoute.push(nextStop);
       currentPos = nextStop.location;
     }
-
     setOptimizedRoute(finalRoute);
     const briefing = await geminiService.getRouteBriefing(finalRoute.map(s => s.label));
     setRouteBriefing(briefing);
   };
 
-  useEffect(() => {
-    if (driverCoords) optimizeRoute();
-  }, [driverCoords, orders.length]);
+  useEffect(() => { optimizeRoute(); }, [driverCoords, orders, currentDriverId]);
 
   const availableOrders = orders
     .filter(o => (o.status === OrderStatus.READY || o.status === OrderStatus.PENDING) && !o.driverId)
     .map(order => ({ ...order, distance: driverCoords && order.location ? calculateDistance(driverCoords, order.location) : null }))
-    .sort((a, b) => (a.distance || 999) - (b.distance || 999));
+    .sort((a, b) => {
+        if (a.status === OrderStatus.READY && b.status !== OrderStatus.READY) return -1;
+        if (b.status === OrderStatus.READY && a.status !== OrderStatus.READY) return 1;
+        return (a.distance || 999) - (b.distance || 999);
+    });
+
+  const activeCalls = availableOrders.filter(o => o.status === OrderStatus.READY);
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-6 animate-in fade-in duration-500 pb-20">
       <header className="bg-white p-6 rounded-3xl shadow-sm border flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-gray-900">Central do Motorista</h1>
-          <p className="text-gray-500">Logística Inteligente Delivora.</p>
+          <h1 className="text-2xl font-extrabold text-indigo-950 tracking-tight">Logística Duarte</h1>
+          <p className="text-indigo-400 font-bold text-xs uppercase tracking-widest mt-1">Status: {driverCoords ? 'GPS Online' : 'Localizando...'}</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={requestLocation} className={`flex items-center gap-2 px-4 py-2 rounded-full font-bold text-sm transition-all ${driverCoords ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-500'}`}>
-            <MapPinIcon /> {isLocating ? 'GPS...' : driverCoords ? 'Online' : 'Ativar GPS'}
-          </button>
-        </div>
+        <button onClick={requestLocation} className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${driverCoords ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-indigo-600 text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700'}`}>
+          <MapPinIcon /> {isLocating ? 'Sincronizando...' : driverCoords ? 'Radar Ativo' : 'Ativar Radar'}
+        </button>
       </header>
 
-      {/* Rota Otimizada */}
-      {optimizedRoute.length > 0 && (
-        <section className="bg-gray-900 text-white p-8 rounded-3xl shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full -mr-20 -mt-20 blur-3xl"></div>
-          <div className="relative z-10">
-            <div className="flex justify-between items-start mb-6">
+      {activeCalls.length > 0 && (
+        <div className="bg-orange-500 p-4 rounded-2xl shadow-lg animate-pulse flex items-center justify-between border border-orange-400 text-white">
+           <div className="flex items-center gap-3">
+              <span className="text-2xl">🔔</span>
               <div>
-                <h2 className="text-indigo-400 text-xs font-bold uppercase tracking-widest mb-1">Rota Otimizada por IA</h2>
-                <h3 className="text-xl font-bold">Sequência de Trabalho</h3>
+                 <p className="text-[10px] font-black uppercase tracking-widest text-orange-100">Chamada Prioritária</p>
+                 <p className="text-sm font-bold">{activeCalls.length} {activeCalls.length === 1 ? 'coleta aguardando' : 'coletas aguardando'} retirada imediata!</p>
               </div>
-              <button onClick={optimizeRoute} className="p-2 bg-white/10 rounded-xl hover:bg-white/20 transition-colors">🔄</button>
+           </div>
+           <div className="bg-white/20 px-3 py-1 rounded-lg text-[10px] font-black">URGENTE</div>
+        </div>
+      )}
+
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[
+          { id: 'day', label: 'Hoje', data: stats.day, color: 'from-indigo-600 to-indigo-800' },
+          { id: 'week', label: 'Semana', data: stats.week, color: 'from-blue-600 to-blue-800' },
+          { id: 'month', label: 'Mês', data: stats.month, color: 'from-slate-800 to-black' }
+        ].map(card => (
+          <div key={card.id} className={`bg-gradient-to-br ${card.color} p-6 rounded-[2.5rem] shadow-xl text-white space-y-4`}>
+            <div className="flex justify-between items-center opacity-80">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em]">{card.label}</span>
+              <span className="text-[10px] bg-white/20 px-2 py-1 rounded-lg font-bold">{card.data.count} Entregas</span>
             </div>
+            <div>
+               <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">Líquido a Receber</p>
+               <h3 className="text-3xl font-black">R$ {card.data.liquid.toFixed(2)}</h3>
+               <p className="text-[9px] font-medium opacity-40 mt-1">Ganhos Brutos: R$ {card.data.revenue.toFixed(2)}</p>
+            </div>
+          </div>
+        ))}
+      </section>
 
-            {routeBriefing && (
-              <p className="text-sm italic text-indigo-200 mb-6 pb-6 border-b border-white/10">"{routeBriefing}"</p>
-            )}
-
-            <div className="space-y-6">
-              {optimizedRoute.map((stop, idx) => (
-                <div key={`${stop.orderId}-${idx}`} className="flex gap-4 group">
-                  <div className="flex flex-col items-center">
-                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-sm shadow-lg ${idx === 0 ? 'bg-indigo-500 text-white animate-pulse' : 'bg-white/10 text-gray-400'}`}>
-                      {idx + 1}
+      {optimizedRoute.length > 0 && (
+        <section className="bg-white p-6 rounded-[3rem] shadow-xl border border-indigo-50 space-y-6">
+          <div className="flex justify-between items-center">
+            <div>
+               <h3 className="text-xl font-black text-indigo-950">Rota Dinâmica</h3>
+               <p className="text-indigo-300 text-[10px] font-bold uppercase tracking-widest">Trajeto mais rápido via IA</p>
+            </div>
+          </div>
+          <div className="h-[350px] w-full bg-indigo-50 rounded-[2.5rem] overflow-hidden border border-indigo-100">
+            <MapView showRouteLine={true} markers={[
+              ...(driverCoords ? [{ position: driverCoords, label: "Você", type: 'DRIVER' as const }] : []),
+              ...optimizedRoute.map(stop => ({ position: stop.location, label: stop.label, type: stop.type === 'PICKUP' ? 'SHOP' as const : 'USER' as const }))
+            ]} />
+          </div>
+          <div className="space-y-3">
+            {optimizedRoute.map((stop, idx) => {
+              const order = orders.find(o => o.id === stop.orderId);
+              const isActive = idx === 0;
+              return (
+                <div key={`${stop.orderId}-${idx}`} className={`p-5 rounded-[2rem] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition-all border ${isActive ? 'bg-indigo-950 text-white border-transparent shadow-2xl scale-[1.02]' : 'bg-indigo-50/30 text-indigo-300 border-indigo-50/50 grayscale'}`}>
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xl ${isActive ? 'bg-indigo-600 text-white' : 'bg-white text-indigo-200 border'}`}>{idx + 1}</div>
+                    <div>
+                       <h4 className="font-black text-lg">{stop.label}</h4>
+                       <p className={`text-[10px] font-bold uppercase tracking-widest ${isActive ? 'text-indigo-400' : 'text-indigo-200'}`}>{stop.subLabel}</p>
                     </div>
-                    {idx < optimizedRoute.length - 1 && <div className="w-0.5 h-12 bg-white/5 my-1"></div>}
                   </div>
-                  <div className="flex-1 pt-1">
-                    <div className="flex justify-between">
-                      <h4 className={`font-bold ${idx === 0 ? 'text-white' : 'text-gray-400'}`}>{stop.label}</h4>
-                      <span className="text-[10px] text-gray-500 uppercase font-bold">{stop.distanceFromPrev.toFixed(1)} km</span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">Ref: #{stop.orderId}</p>
-                    {idx === 0 && (
-                      <button 
-                        onClick={() => {
-                          const order = orders.find(o => o.id === stop.orderId);
-                          if (!order) return;
-                          if (stop.type === 'PICKUP') {
-                            onUpdateStatus(order.id, order.type === ServiceType.RIDE ? OrderStatus.IN_TRANSIT : OrderStatus.OUT_FOR_DELIVERY);
-                          } else {
-                            onUpdateStatus(order.id, OrderStatus.COMPLETED);
-                          }
-                        }}
-                        className="mt-3 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all"
-                      >
-                        {stop.type === 'PICKUP' ? 'Concluir Coleta' : 'Concluir Entrega'}
+                  {isActive && (
+                    <div className="flex gap-2 w-full sm:w-auto">
+                      <button onClick={() => { if (order) onUpdateStatus(order.id, stop.type === 'PICKUP' ? (order.type === ServiceType.RIDE ? OrderStatus.IN_TRANSIT : OrderStatus.OUT_FOR_DELIVERY) : OrderStatus.DELIVERED); }} className="flex-1 sm:flex-none bg-white text-indigo-950 px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-indigo-50 transition-all">
+                        {stop.type === 'PICKUP' ? 'Confirmar Coleta' : 'Confirmar Entrega'}
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
+              );
+            })}
           </div>
         </section>
       )}
 
-      {/* Serviços Disponíveis */}
       <section className="space-y-4">
-        <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Serviços Próximos</h2>
-        <div className="grid gap-4">
-          {availableOrders.length === 0 ? (
-            <div className="p-12 text-center text-gray-400 border-2 border-dashed rounded-3xl">Nenhum serviço pendente na área.</div>
-          ) : (
-            availableOrders.map(order => (
-              <div key={order.id} className="bg-white p-5 rounded-3xl shadow-sm border hover:shadow-md flex justify-between items-center group">
-                <div className="flex items-center gap-4">
-                  <div className={`p-3 rounded-2xl ${order.type === ServiceType.FOOD ? 'bg-orange-50 text-orange-500' : order.type === ServiceType.PARCEL ? 'bg-blue-50 text-blue-500' : 'bg-green-50 text-green-500'}`}>
-                    {order.type === ServiceType.FOOD ? <StoreIcon /> : order.type === ServiceType.PARCEL ? <TruckIcon /> : <UserIcon />}
-                  </div>
-                  <div>
-                    <h4 className="font-bold">{order.shopName || order.parcelDetails?.description || 'Viagem'}</h4>
-                    <p className="text-xs text-gray-400">R$ {order.total.toFixed(2)} {order.distance !== null && `• ${order.distance.toFixed(1)} km`}</p>
-                  </div>
+        <h2 className="text-xs font-black text-indigo-300 uppercase tracking-[0.2em] px-2">Serviços no Radar</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {availableOrders.map(order => (
+            <div key={order.id} className={`p-6 rounded-[2.5rem] border transition-all flex justify-between items-center group ${order.status === OrderStatus.READY ? 'bg-orange-50 border-orange-200 shadow-orange-50' : 'bg-white border-indigo-50'}`}>
+              <div className="flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${order.status === OrderStatus.READY ? 'bg-orange-500 text-white animate-pulse' : 'bg-indigo-100 text-indigo-600'}`}>
+                  {order.type === ServiceType.FOOD ? <StoreIcon /> : <UserIcon />}
                 </div>
-                <button onClick={() => onAcceptOrder(order.id)} className="bg-gray-900 text-white px-6 py-2 rounded-xl font-bold text-sm hover:bg-black transition-all">Aceitar</button>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-black text-indigo-950">{order.shopName || "Pedido"}</h4>
+                    {order.id.startsWith('MAN') && <span className="text-[8px] bg-indigo-900 text-white px-2 py-0.5 rounded font-black uppercase tracking-tighter">ENTREGA DIRETA</span>}
+                    {order.status === OrderStatus.READY && !order.id.startsWith('MAN') && <span className="text-[8px] bg-orange-600 text-white px-2 py-0.5 rounded font-black uppercase tracking-tighter">COLETA</span>}
+                  </div>
+                  <p className="text-xs font-bold text-indigo-400">R$ {order.total.toFixed(2)} • {order.distance?.toFixed(1) || '0.0'} km</p>
+                  {order.parcelDetails?.destination && (
+                    <p className="text-[10px] font-bold text-indigo-300 mt-1">Destino: {order.parcelDetails.destination}</p>
+                  )}
+                </div>
               </div>
-            ))
+              <button onClick={() => onAcceptOrder(order.id)} className={`px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${order.status === OrderStatus.READY ? 'bg-orange-600 text-white hover:bg-orange-700' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>Aceitar</button>
+            </div>
+          ))}
+          {availableOrders.length === 0 && (
+            <div className="md:col-span-2 p-12 bg-white rounded-[3rem] border border-dashed border-indigo-100 text-center text-indigo-200 font-bold uppercase tracking-widest text-xs">Aguardando novos sinais...</div>
           )}
         </div>
       </section>

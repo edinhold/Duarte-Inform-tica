@@ -1,5 +1,6 @@
 
 export enum UserRole {
+  SUPER_ADMIN = 'SUPER_ADMIN',
   ADMIN = 'ADMIN',
   MERCHANT = 'MERCHANT',
   DRIVER = 'DRIVER',
@@ -21,7 +22,9 @@ export enum ServiceType {
 export enum PaymentMethod {
   CREDIT_CARD = 'CREDIT_CARD',
   PIX = 'PIX',
-  CASH = 'CASH'
+  CASH = 'CASH',
+  WALLET = 'WALLET',
+  BOLETO = 'BOLETO'
 }
 
 export enum OrderStatus {
@@ -46,6 +49,19 @@ export interface MenuItem {
 export interface Location {
   lat: number;
   lng: number;
+}
+
+export interface RegionSurcharge {
+  id: string;
+  name: string;
+  surcharge: number;
+}
+
+export interface PricingSettings {
+  baseFee: number;
+  perKmRate: number;
+  minFare: number;
+  regions: RegionSurcharge[];
 }
 
 export interface Shop {
@@ -74,6 +90,7 @@ export interface Order {
   driverId?: string;
   location?: Location;
   destinationLocation?: Location;
+  driverLocation?: Location;
   merchantRating?: number;
   driverRating?: number;
   ratedAt?: string;
@@ -94,20 +111,33 @@ export interface Message {
 export interface ApiSettings {
   paymentGateway: string;
   apiKey: string;
+  webhookUrl: string;
+  commissionRate: number;
   isSandbox: boolean;
   activeMethods: PaymentMethod[];
+  prepaidEnabled: boolean;
+  pricing: PricingSettings;
 }
 
 export interface User {
   id: string;
   name: string;
   email: string;
-  password?: string; // Campo para senha
+  password?: string;
   phone?: string;
-  vehiclePlate?: string; // Placa do veículo (apenas para motoristas)
+  address?: string;
   role: UserRole;
   status: UserStatus;
   avatar?: string;
   createdAt: string;
-  document?: string; // CPF/CNPJ
+  document?: string; // CPF ou CNPJ
+  walletBalance: number;
+  needsPasswordChange?: boolean;
+  // Campos específicos de Motorista
+  vehiclePlate?: string;
+  vehicleModel?: string;
+  vehicleColor?: string;
+  vehicleType?: 'CAR' | 'MOTORCYCLE';
+  // Campos específicos de Lojista
+  shopName?: string;
 }
