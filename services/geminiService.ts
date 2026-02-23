@@ -4,7 +4,7 @@ import { GoogleGenAI, Modality } from "@google/genai";
 export const geminiService = {
   async getFastResponse(prompt: string) {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-flash-lite-latest',
         contents: prompt,
@@ -17,7 +17,7 @@ export const geminiService = {
 
   async analyzeImage(base64: string, mimeType: string, prompt: string) {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
         contents: {
@@ -35,7 +35,7 @@ export const geminiService = {
 
   async searchInformation(query: string) {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: query,
@@ -57,7 +57,7 @@ export const geminiService = {
 
   async getNearbyRecommendations(lat: number, lng: number) {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
         contents: "Quais são os 3 melhores estabelecimentos comerciais ou pontos de interesse nestas coordenadas? Liste como tópicos curtos com links.",
@@ -82,7 +82,7 @@ export const geminiService = {
 
   async getChatSupportResponse(userMessage: string, context: string) {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Você é um assistente de suporte do sistema Delivora. Contexto: ${context}. Pergunta: ${userMessage}. Resposta curta e profissional em PT-BR.`,
