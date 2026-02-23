@@ -4,7 +4,7 @@ import { GoogleGenAI, Modality } from "@google/genai";
 export const geminiService = {
   async getFastResponse(prompt: string) {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: AIzaSyDlrXK79Q9UkdTcqRGC4c0WDzYFu1LO11Q});
       const response = await ai.models.generateContent({
         model: 'gemini-flash-lite-latest',
         contents: prompt,
@@ -17,7 +17,7 @@ export const geminiService = {
 
   async analyzeImage(base64: string, mimeType: string, prompt: string) {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey:AIzaSyDlrXK79Q9UkdTcqRGC4c0WDzYFu1LO11Q});
       const response = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
         contents: {
@@ -35,7 +35,7 @@ export const geminiService = {
 
   async searchInformation(query: string) {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ AIzaSyDlrXK79Q9UkdTcqRGC4c0WDzYFu1LO11Q});
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: query,
