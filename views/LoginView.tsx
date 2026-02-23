@@ -38,7 +38,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onAdminAccess, available
     setTimeout(() => {
       const user = availableUsers.find(u => u.email === email && u.password === password);
       if (user) {
-        if (user.role === UserRole.ADMIN) {
+        if (user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN) {
           setError('Acesso negado. Administradores devem usar o portal específico.');
         } else {
           onLogin(user);
@@ -80,10 +80,14 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onAdminAccess, available
     }, 1000);
   };
 
+  const updateField = (field: keyof typeof formData, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
   if (isRegistering) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-indigo-50/50">
-        <div className="w-full max-w-2xl bg-white rounded-[3rem] shadow-2xl overflow-hidden p-8 md:p-12 animate-in zoom-in duration-500 border border-indigo-100">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-indigo-50/50 overflow-y-auto">
+        <div className="w-full max-w-2xl bg-white rounded-[3rem] shadow-2xl overflow-hidden p-8 md:p-12 animate-in zoom-in duration-500 border border-indigo-100 my-8">
           <div className="flex justify-between items-center mb-8">
             <button onClick={() => setIsRegistering(false)} className="text-indigo-400 font-bold text-sm hover:text-indigo-600 transition-colors">← Voltar para Login</button>
             <h2 className="text-2xl font-black text-indigo-950">Criar Conta</h2>
@@ -97,6 +101,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onAdminAccess, available
             ].map(role => (
               <button
                 key={role.id}
+                type="button"
                 onClick={() => setRegRole(role.id as UserRole)}
                 className={`flex-1 py-3 rounded-xl text-xs font-black uppercase transition-all ${regRole === role.id ? 'bg-white shadow-sm text-indigo-600' : 'text-indigo-400'}`}
               >
@@ -105,66 +110,120 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onAdminAccess, available
             ))}
           </div>
 
-          <form onSubmit={handleRegister} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <form onSubmit={handleRegister} className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Campo Nome - Dinâmico para Merchant */}
             <div className="md:col-span-2">
-               <label className="block text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1 ml-2">
-                 {regRole === UserRole.MERCHANT ? 'Nome da Loja' : 'Nome Completo'}
-               </label>
-               <input required value={regRole === UserRole.MERCHANT ? formData.shopName : formData.name} onChange={e => setFormData({...formData, [regRole === UserRole.MERCHANT ? 'shopName' : 'name']: e.target.value})} className="w-full bg-indigo-50/30 border-0 rounded-2xl p-4 focus:ring-2 focus:ring-indigo-200 transition-all" placeholder="Ex: João Duarte" />
+              <label className="block text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1 ml-2">
+                {regRole === UserRole.MERCHANT ? 'Nome Fantasia da Loja' : 'Nome Completo'}
+              </label>
+              <input 
+                required 
+                value={regRole === UserRole.MERCHANT ? formData.shopName : formData.name} 
+                onChange={e => updateField(regRole === UserRole.MERCHANT ? 'shopName' : 'name', e.target.value)} 
+                className="w-full bg-indigo-50/30 border border-indigo-100/50 rounded-2xl p-4 focus:ring-4 focus:ring-indigo-100 transition-all font-bold text-indigo-900" 
+                placeholder={regRole === UserRole.MERCHANT ? "Ex: Padaria Duarte" : "Ex: João Silva"} 
+              />
             </div>
 
+            {/* Documento - Dinâmico para Merchant */}
+            <div className="md:col-span-1">
+              <label className="block text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1 ml-2">
+                {regRole === UserRole.MERCHANT ? 'CNPJ ou CPF' : 'CPF'}
+              </label>
+              <input 
+                required 
+                value={formData.document} 
+                onChange={e => updateField('document', e.target.value)} 
+                className="w-full bg-indigo-50/30 border border-indigo-100/50 rounded-2xl p-4 focus:ring-4 focus:ring-indigo-100 transition-all font-bold text-indigo-900" 
+                placeholder="000.000.000-00" 
+              />
+            </div>
+
+            {/* Telefone */}
+            <div className="md:col-span-1">
+              <label className="block text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1 ml-2">Telefone Celular</label>
+              <input 
+                required 
+                value={formData.phone} 
+                onChange={e => updateField('phone', e.target.value)} 
+                className="w-full bg-indigo-50/30 border border-indigo-100/50 rounded-2xl p-4 focus:ring-4 focus:ring-indigo-100 transition-all font-bold text-indigo-900" 
+                placeholder="(00) 00000-0000" 
+              />
+            </div>
+
+            {/* Endereço */}
             <div className="md:col-span-2">
-               <label className="block text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1 ml-2">Endereço Completo</label>
-               <input required value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className="w-full bg-indigo-50/30 border-0 rounded-2xl p-4 focus:ring-2 focus:ring-indigo-200 transition-all" placeholder="Rua, Número, Bairro, Cidade" />
+              <label className="block text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1 ml-2">Endereço Completo</label>
+              <input 
+                required 
+                value={formData.address} 
+                onChange={e => updateField('address', e.target.value)} 
+                className="w-full bg-indigo-50/30 border border-indigo-100/50 rounded-2xl p-4 focus:ring-4 focus:ring-indigo-100 transition-all font-bold text-indigo-900" 
+                placeholder="Rua, Número, Bairro, Cidade" 
+              />
             </div>
 
-            <div>
-               <label className="block text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1 ml-2">Telefone</label>
-               <input required value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full bg-indigo-50/30 border-0 rounded-2xl p-4 focus:ring-2 focus:ring-indigo-200 transition-all" placeholder="(00) 00000-0000" />
+            {/* Email */}
+            <div className="md:col-span-1">
+              <label className="block text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1 ml-2">E-mail</label>
+              <input 
+                required 
+                type="email" 
+                value={email} 
+                onChange={e => setEmail(e.target.value)} 
+                className="w-full bg-indigo-50/30 border border-indigo-100/50 rounded-2xl p-4 focus:ring-4 focus:ring-indigo-100 transition-all font-bold text-indigo-900" 
+                placeholder="seu@email.com" 
+              />
             </div>
 
-            <div>
-               <label className="block text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1 ml-2">{regRole === UserRole.MERCHANT ? 'CPF ou CNPJ' : 'CPF'}</label>
-               <input required value={formData.document} onChange={e => setFormData({...formData, document: e.target.value})} className="w-full bg-indigo-50/30 border-0 rounded-2xl p-4 focus:ring-2 focus:ring-indigo-200 transition-all" placeholder="000.000.000-00" />
+            {/* Senha */}
+            <div className="md:col-span-1">
+              <label className="block text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1 ml-2">Senha de Acesso</label>
+              <input 
+                required 
+                type="password" 
+                value={password} 
+                onChange={e => setPassword(e.target.value)} 
+                className="w-full bg-indigo-50/30 border border-indigo-100/50 rounded-2xl p-4 focus:ring-4 focus:ring-indigo-100 transition-all font-bold text-indigo-900" 
+                placeholder="••••••••" 
+              />
             </div>
 
-            <div>
-               <label className="block text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1 ml-2">E-mail</label>
-               <input required type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-indigo-50/30 border-0 rounded-2xl p-4 focus:ring-2 focus:ring-indigo-200 transition-all" placeholder="seu@email.com" />
-            </div>
-
-            <div>
-               <label className="block text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1 ml-2">Senha</label>
-               <input required type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-indigo-50/30 border-0 rounded-2xl p-4 focus:ring-2 focus:ring-indigo-200 transition-all" placeholder="••••••••" />
-            </div>
-
+            {/* Campos Específicos do Motorista */}
             {regRole === UserRole.DRIVER && (
-              <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 p-6 bg-indigo-50/80 rounded-3xl border border-indigo-100">
-                <h4 className="md:col-span-2 text-xs font-black text-indigo-600 uppercase tracking-widest">Informações do Veículo</h4>
-                <div>
-                   <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Placa</label>
-                   <input required value={formData.vehiclePlate} onChange={e => setFormData({...formData, vehiclePlate: e.target.value})} className="w-full bg-white border-0 rounded-2xl p-4" placeholder="ABC-1234" />
+              <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 mt-2 p-8 bg-indigo-50/80 rounded-[2.5rem] border border-indigo-100 shadow-inner animate-in slide-in-from-top duration-300">
+                <div className="md:col-span-2 flex items-center gap-2 mb-2">
+                   <div className="w-1.5 h-6 bg-indigo-600 rounded-full"></div>
+                   <h4 className="text-xs font-black text-indigo-900 uppercase tracking-[0.2em]">Informações do Veículo</h4>
                 </div>
                 <div>
-                   <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Modelo</label>
-                   <input required value={formData.vehicleModel} onChange={e => setFormData({...formData, vehicleModel: e.target.value})} className="w-full bg-white border-0 rounded-2xl p-4" placeholder="Ex: Honda CG 160" />
+                   <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1 ml-2">Placa do Veículo</label>
+                   <input required value={formData.vehiclePlate} onChange={e => updateField('vehiclePlate', e.target.value)} className="w-full bg-white border border-indigo-100/50 rounded-2xl p-4 font-black text-indigo-900" placeholder="AAA-0000" />
                 </div>
                 <div>
-                   <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Cor</label>
-                   <input required value={formData.vehicleColor} onChange={e => setFormData({...formData, vehicleColor: e.target.value})} className="w-full bg-white border-0 rounded-2xl p-4" placeholder="Ex: Vermelho" />
+                   <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1 ml-2">Modelo</label>
+                   <input required value={formData.vehicleModel} onChange={e => updateField('vehicleModel', e.target.value)} className="w-full bg-white border border-indigo-100/50 rounded-2xl p-4 font-black text-indigo-900" placeholder="Ex: Honda Titan" />
                 </div>
                 <div>
-                   <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Tipo</label>
-                   <select value={formData.vehicleType} onChange={e => setFormData({...formData, vehicleType: e.target.value as any})} className="w-full bg-white border-0 rounded-2xl p-4 font-bold text-indigo-900">
-                      <option value="MOTORCYCLE">Moto</option>
+                   <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1 ml-2">Cor Principal</label>
+                   <input required value={formData.vehicleColor} onChange={e => updateField('vehicleColor', e.target.value)} className="w-full bg-white border border-indigo-100/50 rounded-2xl p-4 font-black text-indigo-900" placeholder="Ex: Preto" />
+                </div>
+                <div>
+                   <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1 ml-2">Tipo de Veículo</label>
+                   <select value={formData.vehicleType} onChange={e => setFormData({...formData, vehicleType: e.target.value as any})} className="w-full bg-white border border-indigo-100/50 rounded-2xl p-4 font-bold text-indigo-900">
+                      <option value="MOTORCYCLE">Motocicleta</option>
                       <option value="CAR">Carro</option>
                    </select>
                 </div>
               </div>
             )}
 
-            <button disabled={isLoading} className="md:col-span-2 mt-6 bg-indigo-600 text-white py-5 rounded-3xl font-black text-lg shadow-xl hover:bg-indigo-700 active:scale-95 transition-all shadow-indigo-100">
-              {isLoading ? 'Cadastrando...' : 'Finalizar Cadastro'}
+            <button 
+              disabled={isLoading} 
+              type="submit"
+              className="md:col-span-2 mt-4 bg-indigo-600 text-white py-5 rounded-[2rem] font-black text-lg shadow-2xl hover:bg-black active:scale-95 transition-all shadow-indigo-100"
+            >
+              {isLoading ? 'Sincronizando...' : 'Concluir Cadastro'}
             </button>
           </form>
         </div>

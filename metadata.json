@@ -1,9 +1,17 @@
 {
-  "name": "Duarte Delivery - Omni-Delivery System",
+  "name": "Duarte Delivery ",
   "description": "Uma plataforma de entrega abrangente com interfaces especializadas para Administradores, Lojistas, Motoristas e Clientes.",
   "requestFramePermissions": [
     "geolocation",
     "camera",
     "microphone"
-  ]
+  ],
+  "mobileApp": {
+    "package": "com.duarte.delivery",
+    "version": "1.0.0",
+    "platforms": [
+      "android",
+      "ios"
+    ]
+  }
 }

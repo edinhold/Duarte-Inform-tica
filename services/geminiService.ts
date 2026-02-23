@@ -2,11 +2,9 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
 export const geminiService = {
-  // Respostas Rápidas com Flash Lite
   async getFastResponse(prompt: string) {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      // Use the correct alias for flash lite as per guidelines
       const response = await ai.models.generateContent({
         model: 'gemini-flash-lite-latest',
         contents: prompt,
@@ -17,7 +15,6 @@ export const geminiService = {
     }
   },
 
-  // Análise de Imagem com Gemini 3 Pro
   async analyzeImage(base64: string, mimeType: string, prompt: string) {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -36,7 +33,6 @@ export const geminiService = {
     }
   },
 
-  // Busca com Grounding (Gemini 3 Flash)
   async searchInformation(query: string) {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -59,11 +55,9 @@ export const geminiService = {
     }
   },
 
-  // Mapas com Grounding (Gemini 2.5 Flash)
   async getNearbyRecommendations(lat: number, lng: number) {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      // Fix: Maps grounding is specifically supported in 2.5 series
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
         contents: "Quais são os 3 melhores estabelecimentos comerciais ou pontos de interesse nestas coordenadas? Liste como tópicos curtos com links.",
@@ -99,19 +93,26 @@ export const geminiService = {
     }
   },
 
-  // Fix: Added missing method getMerchantStrategy used in MerchantView
   async getMerchantStrategy(orderCount: number, ratings: number[]) {
     const avgRating = ratings.length > 0 ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : 'N/A';
     return this.getFastResponse(`O lojista teve ${orderCount} pedidos e avaliação média de ${avgRating}. Forneça uma dica estratégica curta de 1 frase para melhorar o negócio.`);
   },
 
-  // Fix: Added missing method getRouteBriefing used in DriverView
   async getRouteBriefing(stops: string[]) {
     return this.getFastResponse(`O motorista tem as seguintes paradas: ${stops.join(', ')}. Forneça um resumo motivador e curto da rota em 1 frase.`);
   },
 
   async getAdminInsights(totalRevenue: number, totalUsers: number) {
     return this.getFastResponse(`Analise o desempenho da plataforma: Receita total R$ ${totalRevenue}, Usuários: ${totalUsers}. Forneça um breve insight de crescimento de 1 frase.`);
+  },
+
+  async getCRMInsights(orderData: any, userData: any) {
+    const prompt = `Como consultor de CRM, analise estes dados de delivery:
+    - Total de pedidos: ${orderData.length}
+    - Faturamento: R$ ${orderData.reduce((a: any, b: any) => a + b.total, 0)}
+    - Clientes cadastrados: ${userData.filter((u: any) => u.role === 'USER').length}
+    Sugira uma ação de marketing para reter clientes 'em risco' e uma para premiar os VIPs. Responda em 2 frases curtas.`;
+    return this.getFastResponse(prompt);
   },
 
   async getProfileSecurityReview(userName: string, role: string, document: string) {

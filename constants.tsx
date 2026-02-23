@@ -9,6 +9,8 @@ export const MOCK_SHOPS: Shop[] = [
     rating: 4.8,
     image: 'https://picsum.photos/seed/burger/400/300',
     location: { lat: -23.5505, lng: -46.6333 },
+    address: 'Av. das Galáxias, 1010 - Centro',
+    phone: '(11) 98888-7777',
     menu: [
       { id: 'm1', name: 'Supernova Burger', description: 'Carne 200g, queijo cheddar, bacon crocante.', price: 35.90, image: 'https://picsum.photos/seed/m1/200/200' },
       { id: 'm2', name: 'Meteor Fries', description: 'Batatas com páprica e molho especial.', price: 18.00, image: 'https://picsum.photos/seed/m2/200/200' },
@@ -21,6 +23,8 @@ export const MOCK_SHOPS: Shop[] = [
     rating: 4.5,
     image: 'https://picsum.photos/seed/pizza/400/300',
     location: { lat: -23.5595, lng: -46.6433 },
+    address: 'Rua de Saturno, 42 - Vila Estelar',
+    phone: '(11) 97777-6666',
     menu: [
       { id: 'm3', name: 'Margherita Clássica', description: 'Molho de tomate, mussarela e manjericão.', price: 45.00, image: 'https://picsum.photos/seed/m3/200/200' },
       { id: 'm4', name: 'Pepperoni Blast', description: 'Pepperoni, mussarela e orégano.', price: 52.00, image: 'https://picsum.photos/seed/m4/200/200' },
@@ -33,6 +37,8 @@ export const MOCK_SHOPS: Shop[] = [
     rating: 4.9,
     image: 'https://picsum.photos/seed/sushi/400/300',
     location: { lat: -23.5455, lng: -46.6233 },
+    address: 'Alameda do Sol Nascente, 88 - Bairro Leste',
+    phone: '(11) 96666-5555',
     menu: [
       { id: 'm5', name: 'Combo Salmão 20 pçs', description: 'Sashimis, nigiris e uramakis de salmão.', price: 89.90, image: 'https://picsum.photos/seed/m5/200/200' },
     ]
@@ -52,7 +58,6 @@ export const MOCK_ORDERS: Order[] = [
     status: OrderStatus.READY,
     createdAt: new Date().toISOString(),
     location: { lat: -23.5505, lng: -46.6333 },
-    // Fix: Added missing required payment properties to match Order interface
     paymentMethod: PaymentMethod.CREDIT_CARD,
     paymentStatus: 'PAID',
   },
@@ -68,7 +73,6 @@ export const MOCK_ORDERS: Order[] = [
     status: OrderStatus.PENDING,
     createdAt: new Date().toISOString(),
     location: { lat: -23.5595, lng: -46.6433 },
-    // Fix: Added missing required payment properties to match Order interface
     paymentMethod: PaymentMethod.CREDIT_CARD,
     paymentStatus: 'PAID',
   }

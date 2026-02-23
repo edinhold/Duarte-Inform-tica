@@ -1,8 +1,7 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { Order, OrderStatus, ServiceType, Location, PaymentMethod, ApiSettings } from '../types';
-import { TruckIcon, UserIcon, StoreIcon, MapPinIcon } from '../components/Icons';
-import { geminiService } from '../services/geminiService';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Order, OrderStatus, ServiceType, Location, PaymentMethod, ApiSettings, UserRole, User } from '../types';
+import { TruckIcon, MapPinIcon } from '../components/Icons';
 import MapView from '../components/MapView';
 
 interface DriverViewProps {
@@ -11,242 +10,342 @@ interface DriverViewProps {
   paymentSettings: ApiSettings;
   onAcceptOrder: (orderId: string) => void;
   onUpdateStatus: (orderId: string, status: OrderStatus) => void;
+  driverUser: User;
+  onUpdateUser: (userId: string, updates: any) => void;
+  onRequestWithdrawal: (amount: number, isEarly: boolean) => void;
 }
 
-interface RouteStop {
-  orderId: string;
-  type: 'PICKUP' | 'DROPOFF';
-  label: string;
-  subLabel: string;
-  location: Location;
-  distanceFromPrev: number;
-  serviceType: ServiceType;
-}
+const DriverView: React.FC<DriverViewProps> = ({ 
+  orders, currentDriverId, paymentSettings, onAcceptOrder, onUpdateStatus, 
+  driverUser, onUpdateUser, onRequestWithdrawal 
+}) => {
+  const [view, setView] = useState<'MAP' | 'WALLET' | 'OFFERS'>('OFFERS');
+  const [driverLocation, setDriverLocation] = useState<Location>({ lat: -23.5505, lng: -46.6333 });
+  const [isOnline, setIsOnline] = useState(false);
+  const [pixKeyInput, setPixKeyInput] = useState(driverUser.pixKey || '');
+  const [withdrawAmount, setWithdrawAmount] = useState<number>(0);
+  const [newOrderAlert, setNewOrderAlert] = useState<Order | null>(null);
+  const [isEarlyWithdrawal, setIsEarlyWithdrawal] = useState(false);
+  const [isSavingPix, setIsSavingPix] = useState(false);
+  
+  const lastOrderCount = useRef(0);
 
-const DriverView: React.FC<DriverViewProps> = ({ orders, currentDriverId, paymentSettings, onAcceptOrder, onUpdateStatus }) => {
-  const [driverCoords, setDriverCoords] = useState<Location | null>(null);
-  const [isLocating, setIsLocating] = useState(false);
-  const [optimizedRoute, setOptimizedRoute] = useState<RouteStop[]>([]);
-  const [routeBriefing, setRouteBriefing] = useState<string>('');
-
-  const requestLocation = () => {
-    setIsLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setDriverCoords({ lat: position.coords.latitude, lng: position.coords.longitude });
-        setIsLocating(false);
-      },
-      () => setIsLocating(false),
-      { enableHighAccuracy: true }
-    );
+  // Som de notificação
+  const playNotificationSound = () => {
+    try {
+      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+      audio.play().catch(e => console.log("Áudio bloqueado pelo navegador até interação."));
+    } catch (e) {
+      console.error("Erro ao tocar som:", e);
+    }
   };
 
-  const calculateDistance = (loc1: Location, loc2: Location) => {
-    const R = 6371;
-    const dLat = (loc2.lat - loc1.lat) * Math.PI / 180;
-    const dLon = (loc2.lng - loc1.lng) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(loc1.lat * Math.PI / 180) * Math.cos(loc2.lat * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-  };
+  // Monitorar localização real
+  useEffect(() => {
+    let watchId: number;
+    if (navigator.geolocation) {
+      watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          setDriverLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        },
+        (error) => console.error("Erro GPS:", error),
+        { enableHighAccuracy: true }
+      );
+    }
+    return () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+    };
+  }, []);
+
+  const getEarningValue = (total: number) => total * (1 - (paymentSettings.commissionRate / 100));
 
   const stats = useMemo(() => {
-    const myHistory = orders.filter(o => o.driverId === currentDriverId && (o.status === OrderStatus.DELIVERED || o.status === OrderStatus.COMPLETED));
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const lastWeek = now.getTime() - (7 * 24 * 60 * 60 * 1000);
-    const lastMonth = now.getTime() - (30 * 24 * 60 * 60 * 1000);
-    const commission = paymentSettings.commissionRate / 100;
-
-    const calculate = (filtered: Order[]) => {
-      const gross = filtered.reduce((acc, o) => acc + o.total, 0);
-      return { count: filtered.length, revenue: gross, liquid: gross * (1 - commission) };
-    };
+    const myCompleted = orders.filter(o => o.driverId === currentDriverId && o.status === OrderStatus.COMPLETED);
+    const todayOrders = myCompleted.filter(o => new Date(o.createdAt).toDateString() === new Date().toDateString());
+    const dailyEarnings = todayOrders.reduce((sum, order) => sum + getEarningValue(order.total), 0);
+    const totalEarnings = myCompleted.reduce((sum, order) => sum + getEarningValue(order.total), 0);
 
     return {
-      day: calculate(myHistory.filter(o => new Date(o.createdAt).getTime() >= today)),
-      week: calculate(myHistory.filter(o => new Date(o.createdAt).getTime() >= lastWeek)),
-      month: calculate(myHistory.filter(o => new Date(o.createdAt).getTime() >= lastMonth))
+      todayCount: todayOrders.length,
+      todayEarnings: dailyEarnings,
+      totalCount: myCompleted.length,
+      totalEarnings: totalEarnings
     };
   }, [orders, currentDriverId, paymentSettings.commissionRate]);
 
-  const optimizeRoute = async () => {
-    if (!driverCoords) return;
-    const myCurrentOrders = orders.filter(o => o.driverId === currentDriverId && ![OrderStatus.COMPLETED, OrderStatus.DELIVERED, OrderStatus.CANCELLED].includes(o.status));
-    if (myCurrentOrders.length === 0) { setOptimizedRoute([]); return; }
+  const availableOrders = useMemo(() => {
+    if (!isOnline) return [];
+    return orders.filter(o => !o.driverId && (o.status === OrderStatus.PENDING || o.status === OrderStatus.READY));
+  }, [orders, isOnline]);
 
-    let stops: RouteStop[] = [];
-    myCurrentOrders.forEach(o => {
-      if ([OrderStatus.READY, OrderStatus.PENDING, OrderStatus.PREPARING].includes(o.status)) {
-        const isRide = o.type === ServiceType.RIDE;
-        stops.push({ 
-          orderId: o.id, type: 'PICKUP', 
-          label: isRide ? `Passageiro: ${o.userName}` : `Coleta: ${o.shopName || 'Loja'}`,
-          subLabel: isRide ? "Origem da Viagem" : "Retirada de Pedido",
-          location: o.location || driverCoords, distanceFromPrev: 0, serviceType: o.type
-        });
-      }
-      if ([OrderStatus.OUT_FOR_DELIVERY, OrderStatus.IN_TRANSIT].includes(o.status)) {
-        const isRide = o.type === ServiceType.RIDE;
-        stops.push({ 
-          orderId: o.id, type: 'DROPOFF', 
-          label: isRide ? `Destino de ${o.userName}` : `Entrega: ${o.userName}`,
-          subLabel: isRide ? "Final da Viagem" : (o.parcelDetails?.destination || "Endereço do Cliente"),
-          location: o.destinationLocation || o.location || driverCoords, distanceFromPrev: 0, serviceType: o.type
-        });
-      }
-    });
+  const activeOrder = useMemo(() => {
+    return orders.find(o => o.driverId === currentDriverId && o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED);
+  }, [orders, currentDriverId]);
 
-    if (stops.length === 0) { setOptimizedRoute([]); return; }
-
-    let finalRoute: RouteStop[] = [];
-    let currentPos = driverCoords;
-    let remainingStops = [...stops];
-    while (remainingStops.length > 0) {
-      let nearestIdx = 0;
-      let minDistance = calculateDistance(currentPos, remainingStops[0].location);
-      for (let i = 1; i < remainingStops.length; i++) {
-        const dist = calculateDistance(currentPos, remainingStops[i].location);
-        if (dist < minDistance) { minDistance = dist; nearestIdx = i; }
-      }
-      const nextStop = remainingStops.splice(nearestIdx, 1)[0];
-      nextStop.distanceFromPrev = minDistance;
-      finalRoute.push(nextStop);
-      currentPos = nextStop.location;
+  useEffect(() => {
+    if (isOnline && availableOrders.length > lastOrderCount.current) {
+      const latest = availableOrders[0];
+      setNewOrderAlert(latest);
+      playNotificationSound();
+      const timer = setTimeout(() => setNewOrderAlert(null), 8000);
+      return () => clearTimeout(timer);
     }
-    setOptimizedRoute(finalRoute);
-    const briefing = await geminiService.getRouteBriefing(finalRoute.map(s => s.label));
-    setRouteBriefing(briefing);
+    lastOrderCount.current = availableOrders.length;
+  }, [availableOrders, isOnline]);
+
+  const mapMarkers = useMemo(() => {
+    const markers: any[] = [{ position: driverLocation, label: 'Você (Duarte)', type: 'DRIVER' }];
+    
+    if (activeOrder) {
+      markers.push({ 
+        position: activeOrder.location, 
+        label: activeOrder.type === ServiceType.PARCEL ? 'Ponto de Coleta' : 'Embarque Passageiro', 
+        type: 'SHOP' 
+      });
+
+      if (activeOrder.destinationLocation) {
+        markers.push({ 
+          position: activeOrder.destinationLocation, 
+          label: 'Ponto de Entrega', 
+          type: 'USER' 
+        });
+      }
+    }
+    return markers;
+  }, [driverLocation, activeOrder]);
+
+  const handleFinishOrder = (orderId: string) => {
+    onUpdateStatus(orderId, OrderStatus.COMPLETED);
+    setView('OFFERS');
   };
 
-  useEffect(() => { optimizeRoute(); }, [driverCoords, orders, currentDriverId]);
+  const handleToggleOnline = () => {
+    setIsOnline(!isOnline);
+    if (!isOnline) setView('OFFERS');
+  };
 
-  const availableOrders = orders
-    .filter(o => (o.status === OrderStatus.READY || o.status === OrderStatus.PENDING) && !o.driverId)
-    .map(order => ({ ...order, distance: driverCoords && order.location ? calculateDistance(driverCoords, order.location) : null }))
-    .sort((a, b) => {
-        if (a.status === OrderStatus.READY && b.status !== OrderStatus.READY) return -1;
-        if (b.status === OrderStatus.READY && a.status !== OrderStatus.READY) return 1;
-        return (a.distance || 999) - (b.distance || 999);
-    });
+  const handleSavePixKey = () => {
+    if (!pixKeyInput.trim()) return alert("Insira uma chave PIX válida.");
+    setIsSavingPix(true);
+    setTimeout(() => {
+      onUpdateUser(driverUser.id, { pixKey: pixKeyInput });
+      setIsSavingPix(false);
+      alert("Chave PIX atualizada com sucesso!");
+    }, 800);
+  };
 
-  const activeCalls = availableOrders.filter(o => o.status === OrderStatus.READY);
+  const handleWithdrawalRequest = () => {
+    if (withdrawAmount <= 0) return alert("Insira um valor válido para saque.");
+    if (withdrawAmount > driverUser.walletBalance) return alert("Saldo insuficiente.");
+    if (!driverUser.pixKey) return alert("Você precisa cadastrar sua chave PIX antes de solicitar um saque.");
+    
+    onRequestWithdrawal(withdrawAmount, isEarlyWithdrawal);
+    setWithdrawAmount(0);
+    alert("Solicitação de saque enviada para análise do administrador.");
+  };
+
+  const withdrawalFeeAmount = isEarlyWithdrawal ? withdrawAmount * (paymentSettings.earlyWithdrawalFee / 100) : 0;
+  const netWithdrawalAmount = withdrawAmount - withdrawalFeeAmount;
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 pb-20">
-      <header className="bg-white p-6 rounded-3xl shadow-sm border flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-extrabold text-indigo-950 tracking-tight">Logística Duarte</h1>
-          <p className="text-indigo-400 font-bold text-xs uppercase tracking-widest mt-1">Status: {driverCoords ? 'GPS Online' : 'Localizando...'}</p>
-        </div>
-        <button onClick={requestLocation} className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${driverCoords ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-indigo-600 text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700'}`}>
-          <MapPinIcon /> {isLocating ? 'Sincronizando...' : driverCoords ? 'Radar Ativo' : 'Ativar Radar'}
-        </button>
-      </header>
-
-      {activeCalls.length > 0 && (
-        <div className="bg-orange-500 p-4 rounded-2xl shadow-lg animate-pulse flex items-center justify-between border border-orange-400 text-white">
-           <div className="flex items-center gap-3">
-              <span className="text-2xl">🔔</span>
-              <div>
-                 <p className="text-[10px] font-black uppercase tracking-widest text-orange-100">Chamada Prioritária</p>
-                 <p className="text-sm font-bold">{activeCalls.length} {activeCalls.length === 1 ? 'coleta aguardando' : 'coletas aguardando'} retirada imediata!</p>
+    <div className="space-y-6 pb-20 animate-in fade-in duration-500 relative">
+      {newOrderAlert && (
+        <div className="fixed top-24 left-4 right-4 z-[100] animate-in slide-in-from-top duration-500">
+           <div className="bg-indigo-600 text-white p-6 rounded-[2.5rem] shadow-2xl flex items-center justify-between border-4 border-white/20 backdrop-blur-lg">
+              <div className="flex items-center gap-4">
+                 <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center text-3xl animate-bounce">📦</div>
+                 <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80 mb-1">Oferta de Corrida</p>
+                    <p className="font-black text-lg">Ganho R$ {getEarningValue(newOrderAlert.total).toFixed(2)}</p>
+                    <p className="text-[9px] font-bold opacity-70 truncate max-w-[150px]">{newOrderAlert.parcelDetails?.destination || 'Destino Local'}</p>
+                 </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => { setView('OFFERS'); setNewOrderAlert(null); }} className="bg-white text-indigo-600 px-6 py-3 rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-indigo-50 transition-all">Aceitar</button>
+                <button onClick={() => setNewOrderAlert(null)} className="bg-white/10 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase border border-white/20 hover:bg-white/20 transition-all">Ignorar</button>
               </div>
            </div>
-           <div className="bg-white/20 px-3 py-1 rounded-lg text-[10px] font-black">URGENTE</div>
         </div>
       )}
 
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {[
-          { id: 'day', label: 'Hoje', data: stats.day, color: 'from-indigo-600 to-indigo-800' },
-          { id: 'week', label: 'Semana', data: stats.week, color: 'from-blue-600 to-blue-800' },
-          { id: 'month', label: 'Mês', data: stats.month, color: 'from-slate-800 to-black' }
-        ].map(card => (
-          <div key={card.id} className={`bg-gradient-to-br ${card.color} p-6 rounded-[2.5rem] shadow-xl text-white space-y-4`}>
-            <div className="flex justify-between items-center opacity-80">
-              <span className="text-[10px] font-black uppercase tracking-[0.2em]">{card.label}</span>
-              <span className="text-[10px] bg-white/20 px-2 py-1 rounded-lg font-bold">{card.data.count} Entregas</span>
-            </div>
+      <div className="bg-white p-6 rounded-[2.5rem] shadow-lg border border-indigo-100 flex items-center justify-between sticky top-4 z-[60] backdrop-blur-md bg-white/90">
+         <div className="flex items-center gap-3">
+            <div className={`w-3 h-3 rounded-full ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-red-400'}`}></div>
             <div>
-               <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">Líquido a Receber</p>
-               <h3 className="text-3xl font-black">R$ {card.data.liquid.toFixed(2)}</h3>
-               <p className="text-[9px] font-medium opacity-40 mt-1">Ganhos Brutos: R$ {card.data.revenue.toFixed(2)}</p>
+               <p className="text-[10px] font-black text-indigo-950 uppercase tracking-[0.2em] leading-none">Status: {isOnline ? 'Online' : 'Offline'}</p>
+               <p className="text-[8px] text-indigo-400 font-bold uppercase mt-1">Sincronizando via GPS Ativo</p>
             </div>
-          </div>
-        ))}
-      </section>
+         </div>
+         <button onClick={handleToggleOnline} className={`px-8 py-3 rounded-xl font-black text-[10px] uppercase shadow-lg transition-all ${isOnline ? 'bg-red-500 text-white' : 'bg-indigo-600 text-white'}`}>
+           {isOnline ? 'Sair de Serviço' : 'Ficar Disponível'}
+         </button>
+      </div>
 
-      {optimizedRoute.length > 0 && (
-        <section className="bg-white p-6 rounded-[3rem] shadow-xl border border-indigo-50 space-y-6">
-          <div className="flex justify-between items-center">
-            <div>
-               <h3 className="text-xl font-black text-indigo-950">Rota Dinâmica</h3>
-               <p className="text-indigo-300 text-[10px] font-bold uppercase tracking-widest">Trajeto mais rápido via IA</p>
-            </div>
-          </div>
-          <div className="h-[350px] w-full bg-indigo-50 rounded-[2.5rem] overflow-hidden border border-indigo-100">
-            <MapView showRouteLine={true} markers={[
-              ...(driverCoords ? [{ position: driverCoords, label: "Você", type: 'DRIVER' as const }] : []),
-              ...optimizedRoute.map(stop => ({ position: stop.location, label: stop.label, type: stop.type === 'PICKUP' ? 'SHOP' as const : 'USER' as const }))
-            ]} />
-          </div>
-          <div className="space-y-3">
-            {optimizedRoute.map((stop, idx) => {
-              const order = orders.find(o => o.id === stop.orderId);
-              const isActive = idx === 0;
-              return (
-                <div key={`${stop.orderId}-${idx}`} className={`p-5 rounded-[2rem] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition-all border ${isActive ? 'bg-indigo-950 text-white border-transparent shadow-2xl scale-[1.02]' : 'bg-indigo-50/30 text-indigo-300 border-indigo-50/50 grayscale'}`}>
-                  <div className="flex items-center gap-4">
-                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xl ${isActive ? 'bg-indigo-600 text-white' : 'bg-white text-indigo-200 border'}`}>{idx + 1}</div>
-                    <div>
-                       <h4 className="font-black text-lg">{stop.label}</h4>
-                       <p className={`text-[10px] font-bold uppercase tracking-widest ${isActive ? 'text-indigo-400' : 'text-indigo-200'}`}>{stop.subLabel}</p>
-                    </div>
-                  </div>
-                  {isActive && (
-                    <div className="flex gap-2 w-full sm:w-auto">
-                      <button onClick={() => { if (order) onUpdateStatus(order.id, stop.type === 'PICKUP' ? (order.type === ServiceType.RIDE ? OrderStatus.IN_TRANSIT : OrderStatus.OUT_FOR_DELIVERY) : OrderStatus.DELIVERED); }} className="flex-1 sm:flex-none bg-white text-indigo-950 px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-indigo-50 transition-all">
-                        {stop.type === 'PICKUP' ? 'Confirmar Coleta' : 'Confirmar Entrega'}
-                      </button>
-                    </div>
-                  )}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+         <div className="bg-white p-6 rounded-3xl border border-indigo-50 shadow-sm text-center">
+            <p className="text-[8px] font-black text-indigo-300 uppercase mb-1">Hoje</p>
+            <p className="text-2xl font-black text-indigo-950">R$ {stats.todayEarnings.toFixed(2)}</p>
+         </div>
+         <div className="bg-white p-6 rounded-3xl border border-indigo-50 shadow-sm text-center">
+            <p className="text-[8px] font-black text-indigo-300 uppercase mb-1">Acumulado</p>
+            <p className="text-2xl font-black text-indigo-950">R$ {stats.totalEarnings.toFixed(2)}</p>
+         </div>
+         <div className="bg-indigo-950 p-6 rounded-3xl border border-indigo-50 shadow-sm text-center text-white">
+            <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">Saldo Duarte Cash</p>
+            <p className="text-2xl font-black text-green-400">R$ {driverUser.walletBalance.toFixed(2)}</p>
+         </div>
+      </div>
+
+      <nav className="flex gap-2">
+         {['OFFERS', 'MAP', 'WALLET'].map(m => (
+            <button key={m} onClick={() => setView(m as any)} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest ${view === m ? 'bg-indigo-950 text-white shadow-xl' : 'bg-white text-indigo-400 border border-indigo-50'}`}>
+               {m === 'OFFERS' ? 'Radar' : m === 'MAP' ? 'Mapa' : 'Carteira'}
+            </button>
+         ))}
+      </nav>
+
+      {view === 'OFFERS' && (
+        <div className="space-y-4 animate-in slide-in-from-bottom duration-500">
+           {isOnline ? (
+             <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   {availableOrders.map(order => (
+                     <div key={order.id} className="bg-white p-8 rounded-[3rem] shadow-sm border border-indigo-50 group hover:border-indigo-600 transition-all">
+                       <div className="flex justify-between items-start mb-6">
+                          <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[9px] font-black uppercase">{order.type}</span>
+                          <div className="text-right">
+                            <p className="text-2xl font-black text-green-600">R$ {getEarningValue(order.total).toFixed(2)}</p>
+                            <p className="text-[8px] font-black text-indigo-300 uppercase">Líquido</p>
+                          </div>
+                       </div>
+                       <div className="space-y-3 mb-8">
+                          <div className="flex items-center gap-3">
+                             <div className="w-8 h-8 bg-indigo-50 rounded-xl flex items-center justify-center text-sm">🏪</div>
+                             <p className="text-sm font-black text-indigo-950 uppercase">{order.shopName || 'Coleta'}</p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                             <div className="w-8 h-8 bg-green-50 rounded-xl flex items-center justify-center text-sm">📍</div>
+                             <p className="text-xs text-indigo-400 font-bold truncate">{order.parcelDetails?.destination || order.rideDetails?.destination}</p>
+                          </div>
+                       </div>
+                       <button onClick={() => { onAcceptOrder(order.id); setView('MAP'); }} className="w-full bg-indigo-950 text-white py-5 rounded-[1.5rem] font-black uppercase text-xs shadow-xl">Aceitar Chamado</button>
+                     </div>
+                   ))}
                 </div>
-              );
-            })}
-          </div>
-        </section>
+             </div>
+           ) : (
+             <div className="bg-indigo-950 text-white p-12 rounded-[4rem] text-center shadow-2xl">
+                <div className="w-20 h-20 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-6">💤</div>
+                <h2 className="text-xl font-black mb-2 uppercase">Radar Desligado</h2>
+                <button onClick={handleToggleOnline} className="bg-white text-indigo-950 px-10 py-4 rounded-2xl font-black uppercase text-[10px]">Ativar Agora</button>
+             </div>
+           )}
+        </div>
       )}
 
-      <section className="space-y-4">
-        <h2 className="text-xs font-black text-indigo-300 uppercase tracking-[0.2em] px-2">Serviços no Radar</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {availableOrders.map(order => (
-            <div key={order.id} className={`p-6 rounded-[2.5rem] border transition-all flex justify-between items-center group ${order.status === OrderStatus.READY ? 'bg-orange-50 border-orange-200 shadow-orange-50' : 'bg-white border-indigo-50'}`}>
+      {view === 'MAP' && (
+        <div className="h-[550px] bg-white p-3 rounded-[3.5rem] shadow-2xl border border-indigo-50 relative overflow-hidden">
+           <MapView markers={mapMarkers} center={driverLocation} showRouteLine={true} />
+           {activeOrder && (
+             <div className="absolute bottom-6 left-6 right-6 z-10 bg-indigo-950 text-white p-8 rounded-[2.5rem] border border-white/10 shadow-2xl space-y-4">
+                <div className="flex justify-between items-center">
+                   <div className="flex-1">
+                      <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">Rota Ativa</p>
+                      <h4 className="font-bold text-xs truncate">Para: {activeOrder.parcelDetails?.destination || activeOrder.rideDetails?.destination}</h4>
+                   </div>
+                   <div className="text-right">
+                      <p className="text-xl font-black text-green-400">R$ {getEarningValue(activeOrder.total).toFixed(2)}</p>
+                   </div>
+                </div>
+                <button onClick={() => handleFinishOrder(activeOrder.id)} className="w-full bg-green-600 py-4 rounded-2xl font-black text-[10px] uppercase">Finalizar Corrida</button>
+             </div>
+           )}
+        </div>
+      )}
+
+      {view === 'WALLET' && (
+        <div className="space-y-6 animate-in slide-in-from-right duration-500">
+           {/* Cadastro de Chave PIX */}
+           <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-indigo-50 space-y-6">
               <div className="flex items-center gap-4">
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${order.status === OrderStatus.READY ? 'bg-orange-500 text-white animate-pulse' : 'bg-indigo-100 text-indigo-600'}`}>
-                  {order.type === ServiceType.FOOD ? <StoreIcon /> : <UserIcon />}
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-black text-indigo-950">{order.shopName || "Pedido"}</h4>
-                    {order.id.startsWith('MAN') && <span className="text-[8px] bg-indigo-900 text-white px-2 py-0.5 rounded font-black uppercase tracking-tighter">ENTREGA DIRETA</span>}
-                    {order.status === OrderStatus.READY && !order.id.startsWith('MAN') && <span className="text-[8px] bg-orange-600 text-white px-2 py-0.5 rounded font-black uppercase tracking-tighter">COLETA</span>}
-                  </div>
-                  <p className="text-xs font-bold text-indigo-400">R$ {order.total.toFixed(2)} • {order.distance?.toFixed(1) || '0.0'} km</p>
-                  {order.parcelDetails?.destination && (
-                    <p className="text-[10px] font-bold text-indigo-300 mt-1">Destino: {order.parcelDetails.destination}</p>
-                  )}
-                </div>
+                 <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-xl">🔑</div>
+                 <div>
+                    <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest leading-none mb-1">Dados Bancários</p>
+                    <h4 className="text-sm font-black text-indigo-950 uppercase">Chave PIX para Recebimento</h4>
+                 </div>
               </div>
-              <button onClick={() => onAcceptOrder(order.id)} className={`px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${order.status === OrderStatus.READY ? 'bg-orange-600 text-white hover:bg-orange-700' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>Aceitar</button>
-            </div>
-          ))}
-          {availableOrders.length === 0 && (
-            <div className="md:col-span-2 p-12 bg-white rounded-[3rem] border border-dashed border-indigo-100 text-center text-indigo-200 font-bold uppercase tracking-widest text-xs">Aguardando novos sinais...</div>
-          )}
+              <div className="flex flex-col md:flex-row gap-3">
+                 <input 
+                    className="flex-1 bg-indigo-50 border-0 rounded-2xl p-4 font-bold text-indigo-900 focus:ring-2 focus:ring-indigo-600 transition-all" 
+                    placeholder="CPF, E-mail, Celular ou Aleatória" 
+                    value={pixKeyInput}
+                    onChange={e => setPixKeyInput(e.target.value)}
+                 />
+                 <button 
+                    onClick={handleSavePixKey}
+                    disabled={isSavingPix}
+                    className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black uppercase text-[10px] shadow-lg hover:bg-black transition-all disabled:opacity-50"
+                 >
+                    {isSavingPix ? 'Salvando...' : 'Salvar Chave'}
+                 </button>
+              </div>
+              {!driverUser.pixKey && (
+                 <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex items-center gap-3">
+                    <span className="text-amber-600 animate-pulse">⚠️</span>
+                    <p className="text-[9px] font-bold text-amber-700 uppercase leading-relaxed">Você precisa cadastrar uma chave para que o administrador possa realizar seus pagamentos.</p>
+                 </div>
+              )}
+           </div>
+
+           <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-indigo-50 space-y-4">
+              <div className="flex items-center gap-4">
+                 <div className="w-12 h-12 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center text-xl">📅</div>
+                 <div>
+                    <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest">Agenda de Saques</p>
+                    <h4 className="text-sm font-black text-indigo-950 uppercase">Seu dia confirmado:</h4>
+                    <p className="text-indigo-600 font-black text-lg">{driverUser.withdrawalDay || 'Segunda-feira'}</p>
+                 </div>
+              </div>
+           </div>
+
+           <div className="bg-indigo-950 text-white p-10 rounded-[3rem] shadow-2xl space-y-8 relative overflow-hidden">
+              <div className="text-center">
+                 <p className="text-[10px] font-black text-indigo-400 uppercase mb-4 tracking-widest">Resgate PIX</p>
+                 <input type="number" className="bg-transparent border-0 font-black text-5xl w-full text-center focus:ring-0 text-white mb-2" value={withdrawAmount || ''} onChange={e => setWithdrawAmount(parseFloat(e.target.value))} placeholder="0,00" />
+                 <p className="text-[9px] font-black text-indigo-500 uppercase">Disponível: R$ {driverUser.walletBalance.toFixed(2)}</p>
+              </div>
+
+              <div className="bg-white/5 p-6 rounded-[2rem] border border-white/10 space-y-4">
+                 <div className="flex justify-between items-center">
+                    <div>
+                       <h5 className="text-xs font-black uppercase">Solicitar Antecipação</h5>
+                       <p className="text-[9px] text-indigo-400 font-bold uppercase tracking-widest">Receba Hoje (Taxa {paymentSettings.earlyWithdrawalFee}%)</p>
+                    </div>
+                    <button onClick={() => setIsEarlyWithdrawal(!isEarlyWithdrawal)} className={`w-12 h-6 rounded-full transition-all relative ${isEarlyWithdrawal ? 'bg-green-500' : 'bg-indigo-800'}`}>
+                       <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${isEarlyWithdrawal ? 'right-1' : 'left-1'}`}></div>
+                    </button>
+                 </div>
+              </div>
+
+              {withdrawAmount > 0 && isEarlyWithdrawal && (
+                 <div className="text-center animate-in fade-in duration-300">
+                    <p className="text-[10px] font-black text-indigo-400 uppercase">Valor Líquido Estimado:</p>
+                    <p className="text-xl font-black text-green-400">R$ {netWithdrawalAmount.toFixed(2)}</p>
+                 </div>
+              )}
+
+              <button 
+                onClick={handleWithdrawalRequest} 
+                className="w-full bg-green-600 text-white py-5 rounded-3xl font-black uppercase text-[10px] shadow-lg hover:bg-green-500 transition-all"
+              >
+                {isEarlyWithdrawal ? 'Antecipar Saque Agora' : 'Solicitar Saque Agendado'}
+              </button>
+           </div>
         </div>
-      </section>
+      )}
     </div>
   );
 };

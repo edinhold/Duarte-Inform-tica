@@ -1,7 +1,9 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { Order, OrderStatus, User, ServiceType, PaymentMethod } from '../types';
-import { geminiService } from '../services/geminiService';
+import { Order, OrderStatus, User, ServiceType, Shop, MenuItem, ApiSettings, TopUpProduct, Location } from '../types';
+import { TruckIcon, TrashIcon, StoreIcon, MapPinIcon } from '../components/Icons';
+import { paymentService } from '../services/paymentService';
+import MapView from '../components/MapView';
 
 interface MerchantViewProps {
   orders: Order[];
@@ -10,350 +12,458 @@ interface MerchantViewProps {
   onPlaceManualOrder: (data: any) => void;
   pricingSettings: any;
   onTopUp: (amount: number) => void;
+  currentShop: Shop;
+  onUpdateShop: (shopId: string, updates: Partial<Shop>) => void;
+  paymentSettings: ApiSettings;
+  onRedeemCode?: (code: string) => Promise<boolean>;
 }
 
-const MerchantView: React.FC<MerchantViewProps> = ({ orders, onUpdateStatus, merchantUser, onPlaceManualOrder, pricingSettings, onTopUp }) => {
-  const [aiTip, setAiTip] = useState<string>('Carregando insight estratégico...');
-  const [showManualModal, setShowManualModal] = useState(false);
-  const [showWalletModal, setShowWalletModal] = useState(false);
+const MerchantView: React.FC<MerchantViewProps> = ({ 
+  orders, onUpdateStatus, merchantUser, onPlaceManualOrder, 
+  pricingSettings, onTopUp, currentShop, onUpdateShop, paymentSettings, onRedeemCode
+}) => {
+  const [tab, setTab] = useState<'OPERATIONS' | 'MENU' | 'CRM' | 'WALLET'>('OPERATIONS');
   
-  // Estado para o formulário de entrega direta
-  const [manualForm, setManualForm] = useState({
-    recipientName: '',
-    recipientPhone: '',
-    deliveryAddress: '',
-    pickupAddress: merchantUser.address || '',
-    description: ''
+  const [showManualOrder, setShowManualOrder] = useState(false);
+  const [manualData, setManualData] = useState({ 
+    recipientName: '', 
+    address: '', 
+    phone: '', 
+    description: '',
+    senderName: currentShop.name,
+    senderPhone: currentShop.phone || merchantUser.phone || ''
   });
 
-  const ratedOrders = orders.filter(o => o.merchantRating !== undefined);
-  const avgRating = ratedOrders.length > 0 
-    ? (ratedOrders.reduce((acc, o) => acc + (o.merchantRating || 0), 0) / ratedOrders.length).toFixed(1)
-    : 'N/A';
+  const [notification, setNotification] = useState<{msg: string} | null>(null);
+  const [isProcessingTopUp, setIsProcessingTopUp] = useState(false);
+  const [editingItem, setEditingItem] = useState<Partial<MenuItem> | null>(null);
+  
+  // Estados para Resgate de Código
+  const [activationCodeInput, setActivationCodeInput] = useState('');
+  const [isRedeeming, setIsRedeeming] = useState(false);
 
-  const orderStats = useMemo(() => {
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const weekStart = now.getTime() - (7 * 24 * 60 * 60 * 1000);
-    const monthStart = now.getTime() - (30 * 24 * 60 * 60 * 1000);
-
-    const filterByTime = (time: number) => orders.filter(o => new Date(o.createdAt).getTime() >= time).length;
-
-    return {
-      day: filterByTime(todayStart),
-      week: filterByTime(weekStart),
-      month: filterByTime(monthStart)
-    };
-  }, [orders]);
+  // Monitorar localização em tempo real do estabelecimento
+  const [shopLocation, setShopLocation] = useState<Location>(currentShop.location);
 
   useEffect(() => {
-    const fetchTip = async () => {
-      const tip = await geminiService.getMerchantStrategy(orders.length, ratedOrders.map(o => o.merchantRating || 5));
-      setAiTip(tip || '');
-    };
-    fetchTip();
-  }, [orders.length]);
-
-  const activeOrders = orders.filter(o => o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.DELIVERED && o.status !== OrderStatus.CANCELLED);
-
-  const calculateManualEstimate = () => {
-    const simulatedDist = 4.5; // Simulação para o MVP
-    let price = pricingSettings.baseFee + (simulatedDist * pricingSettings.perKmRate);
-    return Math.max(price, pricingSettings.minFare);
-  };
-
-  const handleSendManualRequest = (e: React.FormEvent) => {
-    e.preventDefault();
-    const total = calculateManualEstimate();
-    
-    if (merchantUser.walletBalance < total) {
-      alert("Saldo insuficiente na Carteira Logística! Recarregue para solicitar coletas.");
-      setShowWalletModal(true);
-      return;
+    if (navigator.geolocation && showManualOrder) {
+      const watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          setShopLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        },
+        (error) => console.error("Erro GPS Lojista:", error),
+        { enableHighAccuracy: true }
+      );
+      return () => navigator.geolocation.clearWatch(watchId);
     }
+  }, [showManualOrder]);
 
-    onPlaceManualOrder({
-      ...manualForm,
-      total
-    });
-    setShowManualModal(false);
-    setManualForm({
-      recipientName: '',
-      recipientPhone: '',
-      deliveryAddress: '',
-      pickupAddress: merchantUser.address || '',
-      description: ''
-    });
-    alert("Entregador solicitado! O valor foi debitado do seu saldo pré-pago.");
+  const handleRedeem = async () => {
+    if (!activationCodeInput.trim() || !onRedeemCode) return;
+    setIsRedeeming(true);
+    const success = await onRedeemCode(activationCodeInput.toUpperCase().trim());
+    if (success) {
+      setActivationCodeInput('');
+      alert("Sucesso! O saldo foi creditado em sua conta Duarte.");
+    } else {
+      alert("Código inválido ou já resgatado.");
+    }
+    setIsRedeeming(false);
   };
+
+  // Marcadores para o Mapa de Despacho Avulso
+  const manualOrderMarkers = useMemo(() => {
+    const markers: any[] = [
+      { 
+        position: shopLocation, 
+        label: `LOJA: ${currentShop.name} | TEL: ${manualData.senderPhone}`, 
+        type: 'SHOP' 
+      }
+    ];
+    if (manualData.address.length > 5) {
+      // Simulação de destino próximo para o mapa
+      const destCoords = { lat: shopLocation.lat + 0.005, lng: shopLocation.lng + 0.005 };
+      markers.push({ 
+        position: destCoords, 
+        label: `DESTINATÁRIO: ${manualData.recipientName || 'Cliente'} | TEL: ${manualData.phone}`, 
+        type: 'USER' 
+      });
+    }
+    return markers;
+  }, [currentShop, shopLocation, manualData.address, manualData.recipientName, manualData.phone, manualData.senderPhone]);
+
+  useEffect(() => {
+    const lastDelivered = orders.find(o => 
+      (o.status === OrderStatus.DELIVERED || o.status === OrderStatus.COMPLETED) &&
+      o.shopId === currentShop.id
+    );
+    
+    if (lastDelivered) {
+      setNotification({
+        msg: `ENTREGA CONCLUÍDA: O pedido para ${lastDelivered.parcelDetails?.recipientName || lastDelivered.userName} chegou ao destino!`
+      });
+      const timer = setTimeout(() => setNotification(null), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [orders, currentShop.id]);
+
+  const handleSaveItem = () => {
+    if (!editingItem?.name || editingItem.price === undefined) return alert("Preencha Nome e Preço!");
+    const newItem = { 
+      id: editingItem.id || `m-${Date.now()}`,
+      name: editingItem.name,
+      description: editingItem.description || '',
+      price: Number(editingItem.price),
+      image: editingItem.image || 'https://picsum.photos/seed/duarte/400/400'
+    } as MenuItem;
+    
+    const newMenu = editingItem.id 
+      ? currentShop.menu.map(i => i.id === editingItem.id ? newItem : i) 
+      : [...currentShop.menu, newItem];
+      
+    onUpdateShop(currentShop.id, { menu: newMenu });
+    setEditingItem(null);
+  };
+
+  const deleteItem = (itemId: string) => {
+    if (window.confirm("Deseja remover este item do cardápio?")) {
+      const newMenu = currentShop.menu.filter(i => i.id !== itemId);
+      onUpdateShop(currentShop.id, { menu: newMenu });
+    }
+  };
+
+  const handleConfirmManualOrder = () => {
+    if (!manualData.recipientName || !manualData.address || !manualData.phone || !manualData.description) {
+      return alert("Preencha todos os campos do destinatário e descreva o objeto!");
+    }
+    const distance = 2.0 + Math.random() * 5.0;
+    const total = paymentSettings.pricing.baseFee + (distance * paymentSettings.pricing.perKmRate);
+    const orderPayload = {
+      total: Math.max(total, paymentSettings.pricing.minFare),
+      distance: distance,
+      parcelDetails: {
+        senderName: manualData.senderName,
+        senderPhone: manualData.senderPhone,
+        recipientName: manualData.recipientName,
+        recipientPhone: manualData.phone,
+        destination: manualData.address,
+        description: manualData.description
+      },
+      shop: currentShop
+    };
+    onPlaceManualOrder(orderPayload);
+    setShowManualOrder(false);
+    setManualData({ recipientName: '', address: '', phone: '', description: '', senderName: currentShop.name, senderPhone: currentShop.phone || merchantUser.phone || '' });
+    setTab('OPERATIONS');
+  };
+
+  const handleBuyCredits = (product: TopUpProduct) => {
+    if (product.purchaseLink) {
+      window.open(product.purchaseLink, '_blank');
+    } else {
+      alert("Este pacote não possui um link de compra configurado no painel administrativo.");
+    }
+  };
+
+  const merchantCRM = useMemo(() => {
+    const stats = (start: number) => orders.filter(o => new Date(o.createdAt).getTime() >= start).length;
+    return { day: stats(new Date().setHours(0,0,0,0)), week: stats(Date.now() - 604800000), month: stats(Date.now() - 2592000000) };
+  }, [orders]);
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 pb-10">
-      {/* Modal de Recarga da Carteira */}
-      {showWalletModal && (
-        <div className="fixed inset-0 bg-indigo-950/80 backdrop-blur-md z-[250] flex items-center justify-center p-4">
-           <div className="bg-white w-full max-w-md rounded-[3rem] p-8 shadow-2xl animate-in zoom-in duration-300">
-              <div className="flex justify-between items-center mb-6">
-                 <h3 className="text-xl font-black text-indigo-950">Recarregar Saldo Logístico</h3>
-                 <button onClick={() => setShowWalletModal(false)} className="text-indigo-200 hover:text-indigo-600 transition-colors">✕</button>
+    <div className="space-y-6 pb-20 animate-in fade-in duration-500 relative">
+      
+      {/* Modal de Despacho Avulso com Mapa em Tempo Real */}
+      {showManualOrder && (
+        <div className="fixed inset-0 bg-indigo-950/95 backdrop-blur-xl z-[200] flex items-center justify-center p-4 md:p-10 overflow-y-auto">
+           <div className="bg-white w-full max-w-6xl rounded-[3rem] shadow-2xl overflow-hidden flex flex-col lg:flex-row h-full lg:h-[80vh]">
+              {/* Painel Esquerdo: Mapa GPS em Tempo Real */}
+              <div className="flex-1 bg-indigo-50 relative min-h-[300px]">
+                 <MapView markers={manualOrderMarkers} center={shopLocation} showRouteLine={true} />
+                 <div className="absolute top-6 left-6 z-10 space-y-3">
+                    <div className="bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-indigo-100 max-w-xs">
+                       <div className="flex items-center gap-2 mb-1">
+                          <div className="w-2 h-2 bg-green-500 rounded-full animate-ping"></div>
+                          <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Loja (GPS em Tempo Real)</p>
+                       </div>
+                       <h4 className="font-black text-indigo-950 text-xs uppercase">{currentShop.name}</h4>
+                       <p className="text-[9px] font-bold text-indigo-600 mt-1">📞 {manualData.senderPhone}</p>
+                    </div>
+                    {manualData.recipientName && (
+                       <div className="bg-indigo-950/90 text-white p-4 rounded-2xl shadow-xl border border-white/10 animate-in slide-in-from-left duration-300">
+                          <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1">Destinatário</p>
+                          <h4 className="font-black text-xs uppercase">{manualData.recipientName}</h4>
+                          <p className="text-[8px] font-bold text-green-400 mt-1">📞 {manualData.phone}</p>
+                       </div>
+                    )}
+                 </div>
               </div>
-              <p className="text-xs text-indigo-400 mb-6 font-medium">Adicione créditos para solicitar coletas de pedidos externos via Entrega Direta.</p>
-              <div className="grid grid-cols-2 gap-4 mb-8">
-                 {[50, 100, 200, 500].map(val => (
-                   <button 
-                    key={val}
-                    onClick={() => { onTopUp(val); setShowWalletModal(false); }}
-                    className="bg-indigo-50 hover:bg-indigo-600 hover:text-white p-6 rounded-3xl font-black text-indigo-900 transition-all border border-indigo-100"
-                   >
-                     R$ {val},00
-                   </button>
-                 ))}
-              </div>
-              <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100">
-                 <p className="text-[10px] text-amber-700 font-black uppercase tracking-widest mb-1">Duarte Pay</p>
-                 <p className="text-[10px] text-amber-600 font-medium italic">A recarga via Pix é processada instantaneamente.</p>
+              
+              {/* Painel Direito: Formulário com Dados do Destinatário */}
+              <div className="w-full lg:w-[450px] p-8 md:p-12 overflow-y-auto space-y-8 bg-white border-l border-indigo-50">
+                 <div className="flex justify-between items-center">
+                    <div>
+                       <h3 className="text-2xl font-black text-indigo-950 uppercase tracking-tighter">Novo Despacho</h3>
+                       <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mt-1">Informe os dados da entrega avulsa</p>
+                    </div>
+                    <button onClick={() => setShowManualOrder(false)} className="text-indigo-200 hover:text-red-500 transition-colors">✕</button>
+                 </div>
+
+                 <div className="space-y-4">
+                    <div className="space-y-1">
+                       <label className="text-[9px] font-black text-indigo-400 uppercase ml-2">Nome de quem vai receber</label>
+                       <input className="w-full bg-indigo-50/50 border-0 rounded-xl p-4 font-bold text-indigo-900" placeholder="Nome do Cliente" value={manualData.recipientName} onChange={e => setManualData({...manualData, recipientName: e.target.value})} />
+                    </div>
+                    <div className="space-y-1">
+                       <label className="text-[9px] font-black text-indigo-400 uppercase ml-2">Telefone de quem vai receber</label>
+                       <input className="w-full bg-indigo-50/50 border-0 rounded-xl p-4 font-bold text-indigo-900" placeholder="(00) 00000-0000" value={manualData.phone} onChange={e => setManualData({...manualData, phone: e.target.value})} />
+                    </div>
+                    <div className="space-y-1">
+                       <label className="text-[9px] font-black text-indigo-400 uppercase ml-2">Endereço de Entrega</label>
+                       <input className="w-full bg-indigo-50/50 border-0 rounded-xl p-4 font-bold text-indigo-900" placeholder="Rua, Número, Bairro" value={manualData.address} onChange={e => setManualData({...manualData, address: e.target.value})} />
+                    </div>
+                    <div className="space-y-1">
+                       <label className="text-[9px] font-black text-indigo-400 uppercase ml-2">O que vai ser entregue?</label>
+                       <textarea className="w-full bg-indigo-50/50 border-0 rounded-xl p-4 font-bold text-indigo-900 min-h-[80px]" placeholder="Descrição do objeto ou pedido" value={manualData.description} onChange={e => setManualData({...manualData, description: e.target.value})} />
+                    </div>
+                 </div>
+
+                 <div className="bg-indigo-950 p-6 rounded-[2rem] border border-white/10 flex justify-between items-center text-white">
+                    <div>
+                       <p className="text-[8px] font-black text-indigo-400 uppercase">Preço Estimado</p>
+                       <p className="text-xl font-black text-green-400">R$ {Math.max(paymentSettings.pricing.minFare, 12.00).toFixed(2)}</p>
+                    </div>
+                    <button onClick={handleConfirmManualOrder} className="bg-green-600 text-white px-8 py-4 rounded-xl font-black uppercase text-[10px] shadow-lg hover:bg-green-500 transition-all">Confirmar Envio</button>
+                 </div>
               </div>
            </div>
         </div>
       )}
 
-      {/* Modal de Entrega Direta */}
-      {showManualModal && (
-        <div className="fixed inset-0 bg-indigo-950/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-lg rounded-[3rem] p-8 shadow-2xl border border-indigo-100 animate-in zoom-in duration-300">
-             <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-black text-indigo-950">Nova Entrega Direta</h3>
-                <button onClick={() => setShowManualModal(false)} className="text-indigo-200 hover:text-indigo-600 transition-colors text-2xl">✕</button>
-             </div>
-             
-             <form onSubmit={handleSendManualRequest} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2">
-                    <label className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Nome do Destinatário</label>
-                    <input required className="w-full bg-indigo-50/50 border-0 rounded-xl p-3 text-indigo-900 font-medium" value={manualForm.recipientName} onChange={e => setManualForm({...manualForm, recipientName: e.target.value})} placeholder="Ex: Maria Oliveira" />
-                  </div>
-                  <div className="col-span-2 md:col-span-1">
-                    <label className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Telefone / WhatsApp</label>
-                    <input required className="w-full bg-indigo-50/50 border-0 rounded-xl p-3 text-indigo-900 font-medium" value={manualForm.recipientPhone} onChange={e => setManualForm({...manualForm, recipientPhone: e.target.value})} placeholder="(11) 99999-9999" />
-                  </div>
-                  <div className="col-span-2 md:col-span-1">
-                    <label className="text-[10px] font-black text-indigo-300 uppercase block mb-1">O que é a entrega?</label>
-                    <input required className="w-full bg-indigo-50/50 border-0 rounded-xl p-3 text-indigo-900 font-medium" value={manualForm.description} onChange={e => setManualForm({...manualForm, description: e.target.value})} placeholder="Ex: Pacote de Roupas" />
-                  </div>
-                </div>
-
-                <div>
-                   <label className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Endereço de Coleta (Sua Loja)</label>
-                   <input required className="w-full bg-indigo-50/20 border-0 rounded-xl p-3 text-indigo-400 font-medium cursor-not-allowed" readOnly value={manualForm.pickupAddress} />
-                </div>
-
-                <div>
-                   <label className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Endereço de Entrega</label>
-                   <input required className="w-full bg-indigo-50/50 border-0 rounded-xl p-3 text-indigo-900 font-medium" value={manualForm.deliveryAddress} onChange={e => setManualForm({...manualForm, deliveryAddress: e.target.value})} placeholder="Rua das Acácias, 450 - Centro" />
-                </div>
-
-                <div className="bg-indigo-900 text-white p-6 rounded-3xl flex justify-between items-center shadow-xl">
-                   <div>
-                      <p className="text-[10px] font-black uppercase tracking-widest text-indigo-300">Custo Pré-Pago</p>
-                      <p className="text-2xl font-black">R$ {calculateManualEstimate().toFixed(2)}</p>
-                   </div>
-                   <button type="submit" className="bg-white text-indigo-900 px-6 py-3 rounded-2xl font-black uppercase text-xs shadow-lg hover:bg-indigo-50 transition-all">Solicitar Coleta</button>
-                </div>
-             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Seção da Carteira Duarte (Pre-paid) para o Lojista */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-gradient-to-br from-indigo-900 to-black p-8 rounded-[3rem] shadow-2xl text-white relative overflow-hidden group">
-           <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
-              <svg width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
-           </div>
-           <div className="relative z-10">
-              <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-2">Carteira Duarte Lojista</p>
-              <h2 className="text-4xl font-black mb-6">R$ {merchantUser.walletBalance.toFixed(2)}</h2>
-              <div className="flex gap-4">
-                 <button onClick={() => setShowWalletModal(true)} className="bg-white text-indigo-900 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-50 transition-all">Recarregar</button>
-                 <button className="bg-white/10 text-white border border-white/20 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-white/20 transition-all">Relatórios</button>
+      {/* Modal de Edição de Cardápio - Configuração Total Lojista */}
+      {editingItem && (
+        <div className="fixed inset-0 bg-indigo-950/90 backdrop-blur-md z-[250] flex items-center justify-center p-6">
+           <div className="bg-white w-full max-w-md rounded-[3rem] p-10 shadow-2xl space-y-6 animate-in zoom-in duration-300">
+              <h3 className="text-2xl font-black text-indigo-950 uppercase">{editingItem.id ? 'Editar Produto' : 'Novo Produto'}</h3>
+              <div className="space-y-4">
+                 <div className="space-y-1">
+                    <label className="text-[9px] font-black text-indigo-300 uppercase ml-2">Nome</label>
+                    <input className="w-full bg-indigo-50 rounded-xl p-4 font-bold" placeholder="Ex: X-Burguer" value={editingItem.name || ''} onChange={e => setEditingItem({...editingItem, name: e.target.value})} />
+                 </div>
+                 <div className="space-y-1">
+                    <label className="text-[9px] font-black text-indigo-300 uppercase ml-2">Descrição</label>
+                    <textarea className="w-full bg-indigo-50 rounded-xl p-4 font-bold min-h-[80px]" placeholder="Ingredientes e detalhes" value={editingItem.description || ''} onChange={e => setEditingItem({...editingItem, description: e.target.value})} />
+                 </div>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                       <label className="text-[9px] font-black text-indigo-300 uppercase ml-2">Preço (R$)</label>
+                       <input type="number" className="w-full bg-indigo-50 rounded-xl p-4 font-bold" placeholder="25.00" value={editingItem.price ?? ''} onChange={e => setEditingItem({...editingItem, price: Number(e.target.value)})} />
+                    </div>
+                    <div className="space-y-1">
+                       <label className="text-[9px] font-black text-indigo-300 uppercase ml-2">Link Foto</label>
+                       <input className="w-full bg-indigo-50 rounded-xl p-4 font-bold" placeholder="URL da imagem" value={editingItem.image || ''} onChange={e => setEditingItem({...editingItem, image: e.target.value})} />
+                    </div>
+                 </div>
+              </div>
+              <div className="pt-4 space-y-3">
+                 <button onClick={handleSaveItem} className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl">Salvar Produto</button>
+                 <button onClick={() => setEditingItem(null)} className="w-full text-indigo-300 text-[10px] font-black uppercase tracking-widest">Cancelar</button>
               </div>
            </div>
         </div>
+      )}
 
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-indigo-50 flex flex-col justify-center text-center">
-            <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1">Ganhos em Vendas</p>
-            <h3 className="text-2xl font-black text-indigo-950">R$ {orders.filter(o => !o.id.startsWith('MAN')).reduce((acc, o) => acc + o.total, 0).toFixed(2)}</h3>
-          </div>
-          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-indigo-50 flex flex-col justify-center text-center">
-            <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1">Gastos Logística</p>
-            <h3 className="text-2xl font-black text-red-500">R$ {orders.filter(o => o.id.startsWith('MAN')).reduce((acc, o) => acc + o.total, 0).toFixed(2)}</h3>
-          </div>
-        </div>
+      {/* HUD de Gestão Superior */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+         <div className="bg-white p-6 rounded-[2rem] border border-indigo-50 shadow-sm text-center">
+            <p className="text-[9px] font-black text-indigo-300 uppercase mb-1 tracking-widest">Vendas Hoje</p>
+            <p className="text-2xl font-black text-indigo-950 tracking-tighter">{merchantCRM.day}</p>
+         </div>
+         <div className="bg-white p-6 rounded-[2rem] border border-indigo-50 shadow-sm text-center">
+            <p className="text-[9px] font-black text-indigo-300 uppercase mb-1 tracking-widest">Itens Cardápio</p>
+            <p className="text-2xl font-black text-indigo-950 tracking-tighter">{currentShop.menu.length}</p>
+         </div>
+         <div className="bg-indigo-950 p-6 rounded-[2rem] shadow-xl text-center border border-white/5 col-span-2">
+            <p className="text-[9px] font-black text-indigo-400 uppercase mb-1 tracking-widest">Minha Duarte Cash</p>
+            <p className="text-2xl font-black text-green-400 tracking-tighter">R$ {merchantUser.walletBalance.toFixed(2)}</p>
+         </div>
       </div>
 
-      <header className="flex justify-between items-center bg-white p-8 rounded-[2.5rem] shadow-sm border border-indigo-50">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 bg-indigo-900 rounded-2xl flex items-center justify-center text-white text-2xl font-black shadow-lg">
-             {merchantUser.name[0]}
-          </div>
-          <div>
-            <h1 className="text-2xl font-black text-indigo-950 tracking-tight">Cozinha: {merchantUser.name}</h1>
-            <p className="text-indigo-300 text-xs font-bold uppercase tracking-widest">Painel Operacional Lojista</p>
-          </div>
+      {/* Header de Tabs */}
+      <header className="bg-white p-8 rounded-[3rem] shadow-sm border border-indigo-50 flex flex-col md:flex-row justify-between items-center gap-6">
+        <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar w-full md:w-auto">
+           {[
+             { id: 'OPERATIONS', label: 'Pedidos' },
+             { id: 'MENU', label: 'Meu Cardápio' },
+             { id: 'CRM', label: 'Estatísticas' },
+             { id: 'WALLET', label: 'Carteira' }
+           ].map((t) => (
+             <button key={t.id} onClick={() => setTab(t.id as any)} className={`text-[10px] font-black px-8 py-3.5 rounded-2xl uppercase tracking-widest whitespace-nowrap transition-all ${tab === t.id ? 'bg-indigo-900 text-white shadow-xl scale-105' : 'text-indigo-300 hover:bg-indigo-50'}`}>
+               {t.label}
+             </button>
+           ))}
         </div>
-        <button 
-          onClick={() => setShowManualModal(true)}
-          className="bg-indigo-600 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-100 hover:bg-black transition-all flex items-center gap-2"
-        >
-          <span className="text-lg">📦</span> Nova Coleta Direta
+        <button onClick={() => setShowManualOrder(true)} className="w-full md:w-auto bg-green-600 text-white px-10 py-4 rounded-2xl font-black uppercase text-[10px] shadow-lg flex items-center justify-center gap-3 hover:bg-black transition-all">
+           <TruckIcon /> Despacho Avulso
         </button>
       </header>
 
-      {/* Estatísticas Rápidas */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white p-6 rounded-[2rem] border border-indigo-50 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest">Hoje</p>
-            <h3 className="text-2xl font-black text-indigo-950">{orderStats.day} Chamados</h3>
-          </div>
-          <div className="w-10 h-10 bg-green-50 text-green-600 rounded-xl flex items-center justify-center font-bold">↑</div>
-        </div>
-        <div className="bg-white p-6 rounded-[2rem] border border-indigo-50 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest">Esta Semana</p>
-            <h3 className="text-2xl font-black text-indigo-950">{orderStats.week} Chamados</h3>
-          </div>
-          <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center font-bold">📅</div>
-        </div>
-        <div className="bg-white p-6 rounded-[2rem] border border-indigo-50 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest">Este Mês</p>
-            <h3 className="text-2xl font-black text-indigo-950">{orderStats.month} Chamados</h3>
-          </div>
-          <div className="w-10 h-10 bg-indigo-950 text-white rounded-xl flex items-center justify-center font-bold">📊</div>
-        </div>
-      </div>
-
-      <div className="bg-gradient-to-r from-indigo-900 to-indigo-800 text-white p-6 rounded-[2rem] shadow-xl flex items-center gap-4 border border-indigo-700">
-        <div className="bg-white/10 p-4 rounded-2xl text-2xl">⚡</div>
-        <div>
-          <h3 className="font-black text-xs uppercase tracking-[0.2em] text-indigo-300 mb-1">Duarte IA Insight</h3>
-          <p className="text-lg font-medium italic opacity-90">"{aiTip}"</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <div className="flex items-center justify-between px-2">
-            <h2 className="text-xs font-black text-indigo-400 uppercase tracking-widest flex items-center gap-2">
-               Fluxo de Pedidos Ativos
-               <span className="bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-lg">{activeOrders.length}</span>
-            </h2>
-          </div>
-
-          {activeOrders.length === 0 ? (
-            <div className="bg-white p-20 rounded-[3rem] border-2 border-dashed border-indigo-100 text-center space-y-4">
-              <div className="text-4xl opacity-20">🥡</div>
-              <p className="text-indigo-200 font-bold uppercase tracking-widest text-xs">Cozinha em repouso. Aguardando novos pedidos.</p>
-            </div>
-          ) : (
-            <div className="grid gap-4">
-              {activeOrders.map(order => (
-                <div key={order.id} className={`bg-white p-6 rounded-[2.5rem] shadow-sm border transition-all ${order.status === OrderStatus.READY ? 'border-indigo-600 ring-4 ring-indigo-50' : 'border-indigo-50'}`}>
-                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div className="space-y-2 flex-1">
-                      <div className="flex items-center gap-3">
-                        <span className="bg-indigo-950 text-white px-3 py-1 rounded-xl text-[10px] font-black">#{order.id}</span>
-                        <span className="font-black text-indigo-950">
-                          {order.id.startsWith('MAN') ? `Destinatário: ${order.userName}` : order.userName}
-                        </span>
-                        {order.id.startsWith('MAN') && (
-                          <span className="bg-indigo-900 text-white px-2 py-0.5 rounded text-[8px] font-black uppercase">Entrega Direta</span>
-                        )}
-                      </div>
-                      <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-50">
-                        {order.items ? (
-                          <ul className="text-xs text-indigo-900 space-y-1 font-bold">
-                            {order.items?.map((item, idx) => (
-                              <li key={idx} className="flex justify-between">
-                                <span>{item.quantity}x {item.name}</span>
-                                <span className="opacity-40">R$ {(item.price * item.quantity).toFixed(2)}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <div className="text-xs text-indigo-900 font-bold">
-                             <p className="opacity-60">Endereço: {order.parcelDetails?.destination}</p>
-                             <p className="opacity-60">Volume: {order.parcelDetails?.description}</p>
-                          </div>
-                        )}
-                      </div>
-                      <p className="text-sm font-black text-indigo-600">
-                        {order.id.startsWith('MAN') ? `Taxa Logística (Debitada): R$ ${order.total.toFixed(2)}` : `Valor do Pedido: R$ ${order.total.toFixed(2)}`}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-col gap-2 w-full md:w-auto">
-                      {order.status === OrderStatus.PENDING && (
-                        <button 
-                          onClick={() => onUpdateStatus(order.id, OrderStatus.PREPARING)}
-                          className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all active:scale-95"
-                        >
-                          Aceitar Pedido
-                        </button>
-                      )}
-                      
-                      {order.status === OrderStatus.PREPARING && (
-                        <button 
-                          onClick={() => onUpdateStatus(order.id, OrderStatus.READY)}
-                          className="bg-amber-500 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-amber-600 shadow-xl shadow-amber-100 transition-all active:scale-95 flex items-center justify-center gap-2"
-                        >
-                          <span className="animate-pulse">🔔</span> Chamar Entregador
-                        </button>
-                      )}
-
-                      {order.status === OrderStatus.READY && (
-                        <div className="bg-green-50 text-green-700 px-6 py-4 rounded-2xl border border-green-100 text-center animate-pulse">
-                           <p className="text-[10px] font-black uppercase tracking-widest">Sinal Enviado!</p>
-                           <p className="text-xs font-bold">Aguardando Coleta...</p>
-                        </div>
-                      )}
-
-                      {(order.status === OrderStatus.OUT_FOR_DELIVERY || order.status === OrderStatus.IN_TRANSIT) && (
-                        <div className="bg-indigo-50 text-indigo-400 px-6 py-4 rounded-2xl border border-indigo-100 text-center">
-                           <p className="text-[10px] font-black uppercase tracking-widest">Em Trânsito</p>
-                           <p className="text-xs font-bold">Motorista a Caminho</p>
-                        </div>
-                      )}
-
-                      <span className="text-center text-[9px] text-indigo-200 uppercase tracking-widest font-black mt-2">
-                        {order.status}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-6">
-          <h2 className="text-xs font-black text-indigo-400 uppercase tracking-widest px-2">Feedbacks Recentes</h2>
-          <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-indigo-50 space-y-6">
-            {ratedOrders.slice(0, 3).map(o => (
-              <div key={o.id} className="border-b border-indigo-50 pb-4 last:border-0 last:pb-0">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="text-[10px] font-black text-indigo-200 uppercase tracking-tighter">Pedido #{o.id}</span>
-                  <span className="text-amber-500 font-bold">{'★'.repeat(o.merchantRating || 0)}</span>
-                </div>
-                <p className="text-[10px] italic text-indigo-400">"{new Date(o.ratedAt || '').toLocaleDateString('pt-BR')}"</p>
+      {tab === 'MENU' && (
+        <div className="space-y-8 animate-in slide-in-from-bottom duration-500">
+           <div className="flex justify-between items-center px-4">
+              <div>
+                 <h2 className="text-2xl font-black text-indigo-950 uppercase tracking-tighter">Configurar Meus Produtos</h2>
+                 <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest">Gerencie os itens ativos no seu perfil</p>
               </div>
-            ))}
-            {ratedOrders.length === 0 && <p className="text-xs text-indigo-200 font-medium italic text-center">Nenhuma avaliação recebida.</p>}
-          </div>
+              <button onClick={() => setEditingItem({})} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black text-[10px] uppercase shadow-lg">+ Novo Produto</button>
+           </div>
+           
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {currentShop.menu.map(item => (
+                 <div key={item.id} className="bg-white rounded-[2.5rem] overflow-hidden shadow-sm border border-indigo-50 flex group hover:border-indigo-600 transition-all">
+                    <div className="w-32 h-32 bg-indigo-50">
+                       <img src={item.image} className="w-full h-full object-cover group-hover:scale-110 transition-all duration-700" alt={item.name} />
+                    </div>
+                    <div className="p-6 flex-1 flex flex-col justify-between">
+                       <div>
+                          <h4 className="font-black text-indigo-950 text-xs uppercase leading-none mb-1 truncate">{item.name}</h4>
+                          <p className="text-[10px] text-indigo-300 font-bold uppercase truncate max-w-[150px]">{item.description}</p>
+                       </div>
+                       <div className="flex justify-between items-center">
+                          <p className="font-black text-indigo-950">R$ {item.price.toFixed(2)}</p>
+                          <div className="flex gap-2">
+                             <button onClick={() => setEditingItem(item)} className="p-2 text-indigo-400 hover:text-indigo-600">✎</button>
+                             <button onClick={() => deleteItem(item.id)} className="p-2 text-red-300 hover:text-red-500"><TrashIcon /></button>
+                          </div>
+                       </div>
+                    </div>
+                 </div>
+              ))}
+              {currentShop.menu.length === 0 && (
+                 <div className="md:col-span-3 py-20 bg-white border-2 border-dashed border-indigo-100 rounded-[3rem] text-center">
+                    <p className="text-indigo-300 font-black uppercase text-xs">Seu cardápio está vazio. Adicione seu primeiro produto!</p>
+                 </div>
+              )}
+           </div>
         </div>
-      </div>
+      )}
+
+      {tab === 'OPERATIONS' && (
+         <div className="space-y-4">
+            {orders.length === 0 ? (
+               <div className="bg-white p-20 rounded-[4rem] text-center border border-indigo-50 text-indigo-200 uppercase font-black tracking-widest opacity-30">Sem pedidos no momento</div>
+            ) : (
+               orders.map(order => (
+                  <div key={order.id} className="bg-white p-8 rounded-[3rem] border border-indigo-50 shadow-sm flex flex-col md:flex-row justify-between items-center gap-6 group hover:border-indigo-600 transition-all">
+                     <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                           <span className="text-[9px] font-black px-3 py-1 bg-indigo-950 text-white rounded-full uppercase">{order.type}</span>
+                           <span className="text-[10px] font-black text-indigo-300 uppercase">#{order.id.slice(-6)}</span>
+                        </div>
+                        <h4 className="font-black text-indigo-950 text-lg uppercase tracking-tight">{order.parcelDetails?.recipientName || order.userName}</h4>
+                        <p className="text-[10px] font-bold text-indigo-400 uppercase truncate max-w-xs">{order.parcelDetails?.destination || 'Entrega Local'}</p>
+                     </div>
+                     <div className="text-center px-6 border-x border-indigo-50">
+                        <p className="text-[10px] font-black text-indigo-300 uppercase mb-1">Total</p>
+                        <p className="text-xl font-black text-indigo-950 tracking-tighter">R$ {order.total.toFixed(2)}</p>
+                     </div>
+                     <div className="flex gap-2">
+                        {order.status === OrderStatus.PENDING && (
+                           <button onClick={() => onUpdateStatus(order.id, OrderStatus.PREPARING)} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black text-[10px] uppercase shadow-lg">Aceitar</button>
+                        )}
+                        {order.status === OrderStatus.PREPARING && (
+                           <button onClick={() => onUpdateStatus(order.id, OrderStatus.READY)} className="bg-amber-500 text-white px-8 py-3 rounded-xl font-black text-[10px] uppercase shadow-lg">Pronto p/ Coleta</button>
+                        )}
+                        <span className={`px-6 py-3 rounded-xl font-black text-[10px] uppercase ${order.status === OrderStatus.DELIVERED || order.status === OrderStatus.COMPLETED ? 'bg-green-100 text-green-600' : 'bg-indigo-50 text-indigo-300'}`}>
+                           {order.status}
+                        </span>
+                     </div>
+                  </div>
+               ))
+            )}
+         </div>
+      )}
+
+      {tab === 'CRM' && (
+         <div className="bg-white p-10 rounded-[3.5rem] border border-indigo-50 shadow-sm space-y-6">
+            <h2 className="text-2xl font-black text-indigo-950 uppercase">Insights do Estabelecimento</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+               <div className="bg-indigo-50/50 p-8 rounded-[2.5rem] border border-indigo-100">
+                  <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-4">Vendas Finalizadas</p>
+                  <p className="text-4xl font-black text-indigo-950 tracking-tighter">
+                     {orders.filter(o => (o.status === OrderStatus.COMPLETED || o.status === OrderStatus.DELIVERED) && o.shopId === currentShop.id).length}
+                  </p>
+               </div>
+               <div className="bg-green-50/50 p-8 rounded-[2.5rem] border border-green-100">
+                  <p className="text-[10px] font-black text-green-600 uppercase tracking-widest mb-4">Receita Total</p>
+                  <p className="text-4xl font-black text-green-700 tracking-tighter">
+                     R$ {orders.filter(o => (o.status === OrderStatus.COMPLETED || o.status === OrderStatus.DELIVERED) && o.shopId === currentShop.id).reduce((acc, o) => acc + o.total, 0).toFixed(2)}
+                  </p>
+               </div>
+            </div>
+         </div>
+      )}
+
+      {tab === 'WALLET' && (
+         <div className="max-w-4xl mx-auto space-y-10 animate-in zoom-in duration-300">
+            <div className="text-center">
+               <h2 className="text-3xl font-black text-indigo-950 uppercase border-b border-indigo-50 pb-4">Recarga Duarte Cash</h2>
+               <p className="text-[10px] text-indigo-400 font-black uppercase mt-4 tracking-widest">Seu saldo para fretes e despachos avulsos</p>
+            </div>
+
+            {/* Ativação de Código para Lojista */}
+            <div className="bg-indigo-900 text-white p-8 rounded-[3rem] shadow-xl space-y-4">
+               <div className="text-center">
+                  <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Resgatar Código de Recarga</p>
+               </div>
+               <div className="flex gap-4">
+                  <input 
+                    className="flex-1 bg-white/10 border-0 rounded-2xl p-4 font-black text-center text-lg uppercase tracking-widest outline-none focus:ring-2 focus:ring-green-500" 
+                    placeholder="CÓDIGO AQUI" 
+                    value={activationCodeInput}
+                    onChange={e => setActivationCodeInput(e.target.value)}
+                  />
+                  <button 
+                    onClick={handleRedeem}
+                    disabled={isRedeeming}
+                    className="bg-green-600 px-6 py-4 rounded-2xl font-black uppercase text-[10px] hover:bg-green-500 transition-all disabled:opacity-50"
+                  >
+                    {isRedeeming ? 'Validando...' : 'Ativar'}
+                  </button>
+               </div>
+            </div>
+
+            <div className="space-y-6">
+               <div className="text-center">
+                  <h3 className="text-2xl font-black text-indigo-950 uppercase">Catálogo de Créditos para Lojistas</h3>
+                  <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest">Adquira saldo via link externo seguro</p>
+               </div>
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {(paymentSettings.pricing.topUpProducts || []).map(product => (
+                     <div key={product.id} className="bg-white p-8 rounded-[3rem] border-2 border-indigo-50 shadow-sm hover:border-indigo-600 hover:shadow-xl transition-all group flex flex-col justify-between items-center text-center space-y-4 relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-2 bg-indigo-600"></div>
+                        <div>
+                           <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-3xl flex items-center justify-center mx-auto mb-2 text-2xl group-hover:bg-indigo-600 group-hover:text-white transition-all">🏦</div>
+                           <h4 className="text-lg font-black text-indigo-950 uppercase">{product.name}</h4>
+                        </div>
+                        <div>
+                           <p className="text-3xl font-black text-green-600 tracking-tighter mb-4">R$ {product.amount.toFixed(2)}</p>
+                           <button 
+                              onClick={() => handleBuyCredits(product)} 
+                              className="w-full bg-indigo-950 text-white py-4 px-8 rounded-2xl font-black uppercase text-[10px] shadow-lg hover:bg-black transition-all"
+                           >
+                              Compras
+                           </button>
+                        </div>
+                     </div>
+                  ))}
+               </div>
+            </div>
+         </div>
+      )}
     </div>
   );
 };

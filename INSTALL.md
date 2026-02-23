@@ -1,128 +1,115 @@
-# 🚀 Guia de Instalação VPS - Delivora Delivery System
 
-Este documento fornece instruções detalhadas para implantar o sistema **Delivora** em um servidor Linux (VPS).
+# 🚀 Guia de Implantação Profissional - Duarte Delivery (Apache Edition)
 
-## 1. Requisitos do Sistema
-- **SO:** Ubuntu 22.04 LTS ou superior (recomendado).
-- **Recursos Mínimos:** 1GB RAM, 1 vCPU.
-- **Domínio:** Um domínio ou subdomínio apontado para o IP do servidor (necessário para HTTPS).
-- **Acesso:** Usuário com privilégios `sudo`.
+Este guia detalha como configurar o sistema em um servidor de produção (VPS) utilizando **Apache** e como gerar os aplicativos móveis.
 
 ---
 
-## 2. Preparação do Servidor
+## 1. Configuração da VPS (Linux Ubuntu 22.04+)
 
-Atualize os pacotes do sistema e instale o **Nginx**:
+Recomendamos o uso da **LAMP Stack** (Linux, Apache, MySQL, PHP).
 
+### A. Preparação do Ambiente
 ```bash
 sudo apt update && sudo apt upgrade -y
-sudo apt install nginx git curl -y
+# Instalação do Apache, PHP e módulos necessários
+sudo apt install apache2 php libapache2-mod-php php-mysql php-curl php-gd php-mbstring git curl unzip -y
 ```
 
----
-
-## 3. Implantação dos Arquivos
-
-Crie o diretório do projeto e copie os arquivos da aplicação:
-
+### B. Habilitar Módulos do Apache
+O sistema precisa do módulo de reescrita para rotas amigáveis (SPA) e cabeçalhos.
 ```bash
-sudo mkdir -p /var/www/delivora
-# Se estiver usando Git:
-# sudo git clone https://seu-repositorio.com/delivora.git /var/www/delivora
+sudo a2enmod rewrite
+sudo a2enmod headers
+sudo systemctl restart apache2
 ```
 
-Certifique-se de que as permissões de pasta estão corretas para o Nginx:
+### C. Configuração do VirtualHost
+Edite o arquivo de configuração do site: `sudo nano /etc/apache2/sites-available/duarte.conf`
 
+```apache
+<VirtualHost *:80>
+    ServerName seu-dominio.com
+    DocumentRoot /var/www/duarte
+
+    <Directory /var/www/duarte>
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    # Configurações de Logs
+    ErrorLog ${APACHE_LOG_DIR}/duarte_error.log
+    CustomLog ${APACHE_LOG_DIR}/duarte_access.log combined
+
+    # Segurança: Bloquear acesso a arquivos sensíveis
+    <FilesMatch "^\.env|^\.htaccess|.*\.log$">
+        Require all denied
+    </FilesMatch>
+</VirtualHost>
+```
+Ative o site:
 ```bash
-sudo chown -R www-data:www-data /var/www/delivora
-sudo chmod -R 755 /var/www/delivora
+sudo a2ensite duarte.conf
+sudo a2dissite 000-default.conf
+sudo systemctl reload apache2
 ```
 
----
+### D. Configuração do .htaccess (Raiz do Projeto)
+Crie um arquivo `.htaccess` na pasta `/var/www/duarte` para garantir que o React trate as rotas:
 
-## 4. Configuração da API Key (Gemini)
+```apache
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>
+```
 
-Como a aplicação é baseada em módulos ES6 rodando no browser, a `process.env.API_KEY` precisa ser resolvida. Em um ambiente de produção VPS, você tem duas opções:
-
-1.  **Injeção via Build Tool:** Se estiver usando Vite/Webpack, utilize um arquivo `.env`.
-2.  **Injeção Manual:** No arquivo `index.html` ou em um script de inicialização, defina a variável global antes do carregamento do `index.tsx`:
-    ```html
-    <script>
-      window.process = { env: { API_KEY: 'SUA_CHAVE_AQUI' } };
-    </script>
-    ```
-
-> ⚠️ **Segurança:** Para produção rigorosa, recomenda-se criar um Proxy reverso simples em PHP ou Node.js para ocultar a chave de API do lado do cliente.
-
----
-
-## 5. Configuração do Nginx
-
-Crie um novo arquivo de configuração para o site:
-
+### E. SSL (HTTPS Obrigatório)
 ```bash
-sudo nano /etc/nginx/sites-available/delivora
+sudo apt install certbot python3-certbot-apache -y
+sudo certbot --apache -d seu-dominio.com
 ```
 
-Cole a seguinte configuração (substituindo `seu-dominio.com`):
+---
 
-```nginx
-server {
-    listen 80;
-    server_name seu-dominio.com;
-    root /var/www/delivora;
-    index index.html;
+## 2. Criação dos Aplicativos (Android & iOS)
 
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
+Utilizamos o **Capacitor** para transformar a Web em App Nativo.
 
-    # Cache para arquivos estáticos
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
-        expires 30d;
-        add_header Cache-Control "public, no-transform";
-    }
-
-    # Segurança
-    add_header X-Frame-Options "SAMEORIGIN";
-    add_header X-XSS-Protection "1; mode=block";
-    add_header X-Content-Type-Options "nosniff";
-}
-```
-
-Ative o site e reinicie o Nginx:
-
+### A. build do Projeto
 ```bash
-sudo ln -s /etc/nginx/sites-available/delivora /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
+npm run build
+```
+
+### B. Inicialização do Capacitor
+1. `npx cap init "Duarte Delivery" "com.duarte.delivery" --web-dir dist`
+2. `npx cap add android`
+3. `npx cap add ios`
+
+### C. Permissões Nativas
+No Android (`AndroidManifest.xml`):
+```xml
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
+<uses-permission android:name="android.permission.CAMERA" />
 ```
 
 ---
 
-## 6. Segurança e SSL (HTTPS)
+## 3. Segurança e PHP API
 
-O Delivora requer HTTPS para funcionar o **Radar de Localização (GPS)** e o **Assistente de Voz (Microfone)**. Utilize o Certbot para instalar um certificado gratuito:
-
-```bash
-sudo apt install certbot python3-certbot-nginx -y
-sudo certbot --nginx -d seu-dominio.com
-```
-
-Siga as instruções na tela para completar o desafio do Let's Encrypt. O Certbot configurará automaticamente o redirecionamento de HTTP para HTTPS.
-
----
-
-## 7. Manutenção e Logs
-
-Para verificar erros no servidor:
-- **Logs de Erro:** `sudo tail -f /var/log/nginx/error.log`
-- **Logs de Acesso:** `sudo tail -f /var/log/nginx/access.log`
+- **Pasta da API:** Sugerimos criar `/var/www/duarte/api/` e colocar seus scripts PHP lá.
+- **Conexão DB:** No Apache com `libapache2-mod-php`, o PHP roda como o usuário `www-data`.
+- **Permissões:** 
+  ```bash
+  sudo chown -R www-data:www-data /var/www/duarte
+  sudo chmod -R 755 /var/www/duarte
+  ```
 
 ---
-
-## 8. Notas sobre PHP
-Caso deseje integrar um backend em **PHP** para persistência de dados real (em vez do estado em memória atual):
-1. Instale o PHP-FPM: `sudo apt install php-fpm php-mysql`.
-2. Atualize o bloco `location` do Nginx para processar arquivos `.php` via fastcgi.
-3. Utilize os arquivos `.php` para endpoints de API que o `index.tsx` possa consumir via `fetch()`.
+**Suporte:** Em caso de erro 404 ao atualizar a página, certifique-se de que o `AllowOverride All` está configurado corretamente no seu VirtualHost do Apache para permitir que o `.htaccess` funcione.

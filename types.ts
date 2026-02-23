@@ -57,11 +57,31 @@ export interface RegionSurcharge {
   surcharge: number;
 }
 
+export interface TopUpProduct {
+  id: string;
+  name: string;
+  amount: number;
+  description: string;
+  purchaseLink: string;
+}
+
+export interface ActivationCode {
+  id: string;
+  code: string;
+  value: number;
+  isUsed: boolean;
+  usedBy?: string;
+  multiUse?: boolean;
+  usedByEmails?: string[];
+  createdAt: string;
+}
+
 export interface PricingSettings {
   baseFee: number;
   perKmRate: number;
   minFare: number;
   regions: RegionSurcharge[];
+  topUpProducts: TopUpProduct[];
 }
 
 export interface Shop {
@@ -72,6 +92,8 @@ export interface Shop {
   image: string;
   menu: MenuItem[];
   location: Location;
+  address?: string;
+  phone?: string;
 }
 
 export interface Order {
@@ -82,14 +104,26 @@ export interface Order {
   userId: string;
   userName: string;
   items?: { menuItemId: string; quantity: number; name: string; price: number }[];
-  parcelDetails?: { description: string; weight: string; destination: string };
-  rideDetails?: { origin: string; destination: string };
+  parcelDetails?: { 
+    description: string; 
+    weight?: string; 
+    destination: string;
+    senderName: string;
+    senderPhone: string;
+    recipientName: string;
+    recipientPhone: string;
+  };
+  rideDetails?: { 
+    origin: string; 
+    destination: string;
+  };
   total: number;
+  distance?: number;
   status: OrderStatus;
   createdAt: string;
   driverId?: string;
-  location?: Location;
-  destinationLocation?: Location;
+  location: Location; 
+  destinationLocation?: Location; 
   driverLocation?: Location;
   merchantRating?: number;
   driverRating?: number;
@@ -98,25 +132,39 @@ export interface Order {
   paymentStatus: 'PAID' | 'WAITING' | 'REFUNDED';
 }
 
-export interface Message {
+export interface TopUpRecord {
   id: string;
-  senderId: string;
-  senderName: string;
-  senderRole: UserRole;
-  text: string;
-  timestamp: string;
-  orderId?: string;
+  amount: number;
+  date: string;
+  status: 'COMPLETED' | 'PENDING' | 'FAILED';
+}
+
+export interface WithdrawalRequest {
+  id: string;
+  userId: string;
+  userName: string;
+  amount: number;
+  fee: number;
+  netAmount: number;
+  pixKey: string;
+  status: 'PENDING' | 'COMPLETED' | 'REJECTED';
+  requestedAt: string;
+  isEarly: boolean;
 }
 
 export interface ApiSettings {
   paymentGateway: string;
   apiKey: string;
   webhookUrl: string;
+  webhookSecret: string;
   commissionRate: number;
+  earlyWithdrawalFee: number;
+  defaultWithdrawalDay?: string;
   isSandbox: boolean;
   activeMethods: PaymentMethod[];
   prepaidEnabled: boolean;
   pricing: PricingSettings;
+  activationCodes: ActivationCode[];
 }
 
 export interface User {
@@ -125,19 +173,29 @@ export interface User {
   email: string;
   password?: string;
   phone?: string;
+  whatsapp?: string;
   address?: string;
   role: UserRole;
   status: UserStatus;
   avatar?: string;
   createdAt: string;
-  document?: string; // CPF ou CNPJ
+  document?: string;
+  pixKey?: string;
   walletBalance: number;
+  topUpHistory?: TopUpRecord[];
   needsPasswordChange?: boolean;
-  // Campos específicos de Motorista
   vehiclePlate?: string;
   vehicleModel?: string;
   vehicleColor?: string;
   vehicleType?: 'CAR' | 'MOTORCYCLE';
-  // Campos específicos de Lojista
   shopName?: string;
+  withdrawalDay?: string;
+}
+
+export interface Message {
+  id: string;
+  text: string;
+  senderRole: UserRole;
+  senderName: string;
+  timestamp: string;
 }
