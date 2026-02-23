@@ -174,7 +174,7 @@ const MerchantView: React.FC<MerchantViewProps> = ({
   }, [orders]);
 
   return (
-    <div className="space-y-6 pb-20 animate-in fade-in duration-500 relative">
+    <div className="space-y-12 pb-20 animate-in fade-in duration-500 relative">
       
       {/* Modal de Despacho Avulso com Mapa em Tempo Real */}
       {showManualOrder && (
@@ -231,7 +231,7 @@ const MerchantView: React.FC<MerchantViewProps> = ({
                     </div>
                  </div>
 
-                 <div className="bg-indigo-950 p-6 rounded-[2rem] border border-white/10 flex justify-between items-center text-white">
+                 <div className="bg-indigo-950 p-5 rounded-[1.5rem] border border-white/10 flex justify-between items-center text-white">
                     <div>
                        <p className="text-[8px] font-black text-indigo-400 uppercase">Preço Estimado</p>
                        <p className="text-xl font-black text-green-400">R$ {Math.max(paymentSettings.pricing.minFare, 12.00).toFixed(2)}</p>
@@ -277,36 +277,36 @@ const MerchantView: React.FC<MerchantViewProps> = ({
       )}
 
       {/* HUD de Gestão Superior */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-         <div className="bg-white p-6 rounded-[2rem] border border-indigo-50 shadow-sm text-center">
-            <p className="text-[9px] font-black text-indigo-300 uppercase mb-1 tracking-widest">Vendas Hoje</p>
-            <p className="text-2xl font-black text-indigo-950 tracking-tighter">{merchantCRM.day}</p>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+         <div className="bg-white p-4 md:p-6 rounded-[1.5rem] md:rounded-[2rem] border border-indigo-50 shadow-sm text-center">
+            <p className="text-[8px] md:text-[9px] font-black text-indigo-300 uppercase mb-1 tracking-widest">Vendas Hoje</p>
+            <p className="text-xl md:text-2xl font-black text-indigo-950 tracking-tighter">{merchantCRM.day}</p>
          </div>
-         <div className="bg-white p-6 rounded-[2rem] border border-indigo-50 shadow-sm text-center">
-            <p className="text-[9px] font-black text-indigo-300 uppercase mb-1 tracking-widest">Itens Cardápio</p>
-            <p className="text-2xl font-black text-indigo-950 tracking-tighter">{currentShop.menu.length}</p>
+         <div className="bg-white p-4 md:p-6 rounded-[1.5rem] md:rounded-[2rem] border border-indigo-50 shadow-sm text-center">
+            <p className="text-[8px] md:text-[9px] font-black text-indigo-300 uppercase mb-1 tracking-widest">Itens Cardápio</p>
+            <p className="text-xl md:text-2xl font-black text-indigo-950 tracking-tighter">{currentShop.menu.length}</p>
          </div>
-         <div className="bg-indigo-950 p-6 rounded-[2rem] shadow-xl text-center border border-white/5 col-span-2">
-            <p className="text-[9px] font-black text-indigo-400 uppercase mb-1 tracking-widest">Minha Duarte Cash</p>
-            <p className="text-2xl font-black text-green-400 tracking-tighter">R$ {merchantUser.walletBalance.toFixed(2)}</p>
+         <div className="bg-indigo-950 p-4 md:p-5 rounded-[1.2rem] md:rounded-[1.5rem] shadow-xl text-center border border-white/5 col-span-2">
+            <p className="text-[8px] md:text-[9px] font-black text-indigo-400 uppercase mb-1 tracking-widest">Minha Duarte Cash</p>
+            <p className="text-xl md:text-2xl font-black text-green-400 tracking-tighter">R$ {merchantUser.walletBalance.toFixed(2)}</p>
          </div>
       </div>
 
       {/* Header de Tabs */}
-      <header className="bg-white p-8 rounded-[3rem] shadow-sm border border-indigo-50 flex flex-col md:flex-row justify-between items-center gap-6">
-        <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar w-full md:w-auto">
+      <header className="bg-white p-4 md:p-8 rounded-[2rem] md:rounded-[3rem] shadow-sm border border-indigo-50 flex flex-col lg:flex-row justify-between items-center gap-4 md:gap-6">
+        <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar w-full lg:w-auto">
            {[
              { id: 'OPERATIONS', label: 'Pedidos' },
              { id: 'MENU', label: 'Meu Cardápio' },
              { id: 'CRM', label: 'Estatísticas' },
              { id: 'WALLET', label: 'Carteira' }
            ].map((t) => (
-             <button key={t.id} onClick={() => setTab(t.id as any)} className={`text-[10px] font-black px-8 py-3.5 rounded-2xl uppercase tracking-widest whitespace-nowrap transition-all ${tab === t.id ? 'bg-indigo-900 text-white shadow-xl scale-105' : 'text-indigo-300 hover:bg-indigo-50'}`}>
+             <button key={t.id} onClick={() => setTab(t.id as any)} className={`text-[9px] md:text-[10px] font-black px-4 md:px-8 py-3 md:py-3.5 rounded-xl md:rounded-2xl uppercase tracking-widest whitespace-nowrap transition-all ${tab === t.id ? 'bg-indigo-900 text-white shadow-xl scale-105' : 'text-indigo-300 hover:bg-indigo-50'}`}>
                {t.label}
              </button>
            ))}
         </div>
-        <button onClick={() => setShowManualOrder(true)} className="w-full md:w-auto bg-green-600 text-white px-10 py-4 rounded-2xl font-black uppercase text-[10px] shadow-lg flex items-center justify-center gap-3 hover:bg-black transition-all">
+        <button onClick={() => setShowManualOrder(true)} className="w-full lg:w-auto bg-green-600 text-white px-8 md:px-10 py-3 md:py-4 rounded-xl md:rounded-2xl font-black uppercase text-[9px] md:text-[10px] shadow-lg flex items-center justify-center gap-3 hover:bg-black transition-all">
            <TruckIcon /> Despacho Avulso
         </button>
       </header>

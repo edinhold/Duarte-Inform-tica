@@ -38,6 +38,23 @@ const AdminView: React.FC<AdminViewProps> = ({
   const [newTopUpProduct, setNewTopUpProduct] = useState({ name: '', amount: 0, description: '', purchaseLink: '' });
   const [newCode, setNewCode] = useState({ code: '', value: 0, multiUse: false });
 
+  // Estado para troca de senha do próprio admin
+  const [adminNewPassword, setAdminNewPassword] = useState('');
+  const [isAdminSaving, setIsAdminSaving] = useState(false);
+
+  const handleAdminUpdatePassword = () => {
+    if (!adminNewPassword.trim() || adminNewPassword.length < 6) {
+      return alert("A nova senha deve ter pelo menos 6 caracteres.");
+    }
+    setIsAdminSaving(true);
+    setTimeout(() => {
+      onUpdateUser(currentUser.id, { password: adminNewPassword });
+      setAdminNewPassword('');
+      setIsAdminSaving(false);
+      alert("Sua senha administrativa foi alterada com sucesso!");
+    }, 800);
+  };
+
   const filteredUsers = useMemo(() => {
     if (userFilter === 'ALL') return users;
     return users.filter(u => u.status === userFilter);
@@ -132,7 +149,7 @@ const AdminView: React.FC<AdminViewProps> = ({
   [orders]);
 
   return (
-    <div className="space-y-6 pb-12 animate-in fade-in duration-500 relative">
+    <div className="space-y-12 pb-12 animate-in fade-in duration-500 relative">
       
       {editModal.isOpen && (
         <div className="fixed inset-0 bg-indigo-950/90 backdrop-blur-md z-[300] flex items-center justify-center p-6">
@@ -169,19 +186,19 @@ const AdminView: React.FC<AdminViewProps> = ({
         </div>
       )}
 
-      <header className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-indigo-50 flex flex-col md:flex-row justify-between items-center gap-6">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-indigo-950 text-white rounded-2xl flex items-center justify-center font-black">AD</div>
-          <h1 className="text-2xl font-black text-indigo-950 uppercase tracking-tighter">Duarte Admin</h1>
+      <header className="bg-white p-4 md:p-8 rounded-[2rem] md:rounded-[2.5rem] shadow-sm border border-indigo-50 flex flex-col lg:flex-row justify-between items-center gap-4 md:gap-6">
+        <div className="flex items-center gap-4 w-full lg:w-auto">
+          <div className="w-10 h-10 md:w-12 md:h-12 bg-indigo-950 text-white rounded-xl md:rounded-2xl flex items-center justify-center font-black text-sm md:text-base shrink-0">AD</div>
+          <h1 className="text-xl md:text-2xl font-black text-indigo-950 uppercase tracking-tighter">Duarte Admin</h1>
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar w-full md:w-auto">
+        <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar w-full lg:w-auto">
           {[
             { id: 'CRM', label: 'Início' },
             { id: 'USERS', label: 'Usuários' },
             { id: 'PRICING', label: 'Catálogo & Logística' },
             { id: 'WITHDRAWALS', label: 'Financeiro' },
           ].map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id as any)} className={`relative flex items-center gap-2 text-[10px] font-black px-6 py-4 rounded-2xl transition-all uppercase tracking-widest whitespace-nowrap ${tab === t.id ? 'bg-indigo-950 text-white shadow-xl scale-105' : 'bg-white text-indigo-300 hover:bg-indigo-50 border border-indigo-50'}`}>
+            <button key={t.id} onClick={() => setTab(t.id as any)} className={`relative flex items-center gap-2 text-[8px] md:text-[10px] font-black px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl transition-all uppercase tracking-widest whitespace-nowrap ${tab === t.id ? 'bg-indigo-950 text-white shadow-xl scale-105' : 'bg-white text-indigo-300 hover:bg-indigo-50 border border-indigo-50'}`}>
                {t.label}
             </button>
           ))}
@@ -453,18 +470,23 @@ const AdminView: React.FC<AdminViewProps> = ({
 
       {tab === 'CRM' && (
         <div className="space-y-8 animate-in fade-in duration-300">
-           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <div className="bg-indigo-950 p-8 rounded-[3rem] text-white shadow-xl col-span-2">
-                 <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-2">Faturamento Rede Duarte</p>
-                 <h2 className="text-5xl font-black tracking-tighter text-green-400">R$ {orders.filter(o => o.status === OrderStatus.COMPLETED).reduce((acc, o) => acc + o.total, 0).toFixed(2)}</h2>
+           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+              <div className="bg-indigo-950 p-6 md:p-8 rounded-[2rem] md:rounded-[3rem] text-white shadow-xl sm:col-span-2 border border-white/5 relative overflow-hidden">
+                 <div className="absolute top-0 right-0 w-48 h-48 bg-green-500/10 rounded-full blur-3xl -mr-24 -mt-24"></div>
+                 <p className="text-[9px] md:text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em] mb-2">Faturamento Rede Duarte</p>
+                 <h2 className="text-3xl md:text-5xl font-black tracking-tighter text-green-400">R$ {orders.filter(o => o.status === OrderStatus.COMPLETED).reduce((acc, o) => acc + o.total, 0).toFixed(2)}</h2>
+                 <div className="mt-4 flex items-center gap-2 text-indigo-300/60">
+                    <div className="w-1 h-1 bg-green-500 rounded-full animate-pulse"></div>
+                    <p className="text-[8px] font-bold uppercase tracking-widest">Atualizado em tempo real</p>
+                 </div>
               </div>
-              <div className="bg-white p-8 rounded-[3rem] border border-indigo-50 shadow-sm text-center">
-                 <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-2">Lojistas</p>
-                 <p className="text-3xl font-black text-indigo-950">{users.filter(u => u.role === UserRole.MERCHANT).length}</p>
+              <div className="bg-white p-6 md:p-8 rounded-[2rem] md:rounded-[3rem] border border-indigo-50 shadow-sm text-center flex flex-col justify-center">
+                 <p className="text-[9px] md:text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-2">Lojistas</p>
+                 <p className="text-2xl md:text-3xl font-black text-indigo-950">{users.filter(u => u.role === UserRole.MERCHANT).length}</p>
               </div>
-              <div className="bg-white p-8 rounded-[3rem] border border-indigo-50 shadow-sm text-center">
-                 <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-2">Entregadores</p>
-                 <p className="text-3xl font-black text-indigo-950">{users.filter(u => u.role === UserRole.DRIVER).length}</p>
+              <div className="bg-white p-6 md:p-8 rounded-[2rem] md:rounded-[3rem] border border-indigo-50 shadow-sm text-center flex flex-col justify-center">
+                 <p className="text-[9px] md:text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-2">Entregadores</p>
+                 <p className="text-2xl md:text-3xl font-black text-indigo-950">{users.filter(u => u.role === UserRole.DRIVER).length}</p>
               </div>
            </div>
         </div>

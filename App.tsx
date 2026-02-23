@@ -24,7 +24,8 @@ const App: React.FC = () => {
     const saved = localStorage.getItem('duarte_users');
     if (saved) return JSON.parse(saved);
     return [
-      { id: 'u1', name: 'Carlos Silva', email: 'carlos@email.com', password: 'user123', role: UserRole.USER, status: UserStatus.ACTIVE, createdAt: '2023-01-01T10:00:00Z', walletBalance: 150.00, phone: '(11) 99999-8888' }
+      { id: 'u1', name: 'Carlos Silva', email: 'carlos@email.com', password: 'user123', role: UserRole.USER, status: UserStatus.ACTIVE, createdAt: '2023-01-01T10:00:00Z', walletBalance: 150.00, phone: '(11) 99999-8888' },
+      { id: 'master', name: 'Master Duarte', email: 'master@duarte.com', password: 'master123', role: UserRole.SUPER_ADMIN, status: UserStatus.ACTIVE, createdAt: new Date().toISOString(), walletBalance: 0, phone: '(11) 90000-0000' }
     ] as User[];
   });
 
@@ -203,21 +204,29 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-indigo-50/20">
-      <nav className="fixed top-0 left-0 right-0 bg-white/90 backdrop-blur-md shadow-sm z-50 px-6 py-3 flex justify-between items-center border-b border-indigo-50">
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => setIsViewingProfile(false)}>
-          <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-indigo-100">D</div>
-          <span className="text-2xl font-black text-indigo-950 uppercase tracking-tighter">Duarte</span>
-        </div>
-        <div className="flex items-center gap-4">
-           <button onClick={() => setIsViewingProfile(true)} className="text-right group">
-              <p className="text-xs font-black text-indigo-950 group-hover:text-indigo-600 transition-colors">{currentUser.name}</p>
-              <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest">{currentUser.role}</p>
+      <header className="fixed top-0 left-0 right-0 z-50">
+        <div className="bg-indigo-950 text-white px-4 md:px-6 py-1.5 flex justify-between items-center border-b border-white/5">
+           <p className="text-[7px] md:text-[8px] font-black uppercase tracking-[0.3em] text-indigo-400">Duarte Delivery System v5.2</p>
+           <button onClick={() => { setCurrentUser(null); setIsViewingProfile(false); }} className="flex items-center gap-2 text-red-400 font-black text-[8px] md:text-[9px] uppercase hover:text-white transition-all">
+              <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span>
+              Sair da Conta
            </button>
-           <button onClick={() => { setCurrentUser(null); setIsViewingProfile(false); }} className="text-red-400 font-black text-[10px] uppercase hover:text-red-600 transition-colors">Sair</button>
         </div>
-      </nav>
+        <nav className="bg-white/90 backdrop-blur-md shadow-sm px-4 md:px-6 py-3 flex justify-between items-center border-b border-indigo-50">
+          <div className="flex items-center gap-2 cursor-pointer shrink-0" onClick={() => setIsViewingProfile(false)}>
+            <div className="w-8 h-8 md:w-10 md:h-10 bg-indigo-600 rounded-xl md:rounded-2xl flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-indigo-100">D</div>
+            <span className="text-xl md:text-2xl font-black text-indigo-950 uppercase tracking-tighter">Duarte</span>
+          </div>
+          <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
+             <button onClick={() => setIsViewingProfile(true)} className="text-right group truncate">
+                <p className="text-[10px] md:text-xs font-black text-indigo-950 group-hover:text-indigo-600 transition-colors truncate max-w-[100px] md:max-w-none">{currentUser.name}</p>
+                <p className="text-[8px] md:text-[10px] text-indigo-400 font-bold uppercase tracking-widest truncate">{currentUser.role}</p>
+             </button>
+          </div>
+        </nav>
+      </header>
 
-      <main className="max-w-6xl mx-auto p-4 pt-24 pb-32">
+      <main className="max-w-7xl mx-auto p-6 pt-36 pb-32">
         {isViewingProfile ? (
           <UserProfileView user={currentUser} onUpdate={handleUpdateUser} onBack={() => setIsViewingProfile(false)} />
         ) : (

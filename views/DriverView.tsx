@@ -151,7 +151,7 @@ const DriverView: React.FC<DriverViewProps> = ({
   const netWithdrawalAmount = withdrawAmount - withdrawalFeeAmount;
 
   return (
-    <div className="space-y-6 pb-20 animate-in fade-in duration-500 relative">
+    <div className="space-y-12 pb-20 animate-in fade-in duration-500 relative">
       {newOrderAlert && (
         <div className="fixed top-24 left-4 right-4 z-[100] animate-in slide-in-from-top duration-500">
            <div className="bg-indigo-600 text-white p-6 rounded-[2.5rem] shadow-2xl flex items-center justify-between border-4 border-white/20 backdrop-blur-lg">
@@ -184,24 +184,24 @@ const DriverView: React.FC<DriverViewProps> = ({
          </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-         <div className="bg-white p-6 rounded-3xl border border-indigo-50 shadow-sm text-center">
-            <p className="text-[8px] font-black text-indigo-300 uppercase mb-1">Hoje</p>
-            <p className="text-2xl font-black text-indigo-950">R$ {stats.todayEarnings.toFixed(2)}</p>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
+         <div className="bg-white p-4 md:p-6 rounded-2xl md:rounded-3xl border border-indigo-50 shadow-sm text-center">
+            <p className="text-[7px] md:text-[8px] font-black text-indigo-300 uppercase mb-1">Hoje</p>
+            <p className="text-xl md:text-2xl font-black text-indigo-950">R$ {stats.todayEarnings.toFixed(2)}</p>
          </div>
-         <div className="bg-white p-6 rounded-3xl border border-indigo-50 shadow-sm text-center">
-            <p className="text-[8px] font-black text-indigo-300 uppercase mb-1">Acumulado</p>
-            <p className="text-2xl font-black text-indigo-950">R$ {stats.totalEarnings.toFixed(2)}</p>
+         <div className="bg-white p-4 md:p-6 rounded-2xl md:rounded-3xl border border-indigo-50 shadow-sm text-center">
+            <p className="text-[7px] md:text-[8px] font-black text-indigo-300 uppercase mb-1">Acumulado</p>
+            <p className="text-xl md:text-2xl font-black text-indigo-950">R$ {stats.totalEarnings.toFixed(2)}</p>
          </div>
-         <div className="bg-indigo-950 p-6 rounded-3xl border border-indigo-50 shadow-sm text-center text-white">
-            <p className="text-[8px] font-black text-indigo-400 uppercase mb-1">Saldo Duarte Cash</p>
-            <p className="text-2xl font-black text-green-400">R$ {driverUser.walletBalance.toFixed(2)}</p>
+         <div className="bg-indigo-950 p-4 md:p-6 rounded-2xl md:rounded-3xl border border-indigo-50 shadow-sm text-center text-white col-span-2 md:col-span-1">
+            <p className="text-[7px] md:text-[8px] font-black text-indigo-400 uppercase mb-1">Saldo Duarte Cash</p>
+            <p className="text-xl md:text-2xl font-black text-green-400">R$ {driverUser.walletBalance.toFixed(2)}</p>
          </div>
       </div>
 
-      <nav className="flex gap-2">
+      <nav className="flex gap-2 overflow-x-auto no-scrollbar">
          {['OFFERS', 'MAP', 'WALLET'].map(m => (
-            <button key={m} onClick={() => setView(m as any)} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest ${view === m ? 'bg-indigo-950 text-white shadow-xl' : 'bg-white text-indigo-400 border border-indigo-50'}`}>
+            <button key={m} onClick={() => setView(m as any)} className={`flex-1 min-w-[80px] py-3 rounded-xl text-[8px] md:text-[9px] font-black uppercase tracking-widest transition-all ${view === m ? 'bg-indigo-950 text-white shadow-xl' : 'bg-white text-indigo-400 border border-indigo-50'}`}>
                {m === 'OFFERS' ? 'Radar' : m === 'MAP' ? 'Mapa' : 'Carteira'}
             </button>
          ))}
@@ -237,8 +237,8 @@ const DriverView: React.FC<DriverViewProps> = ({
                 </div>
              </div>
            ) : (
-             <div className="bg-indigo-950 text-white p-12 rounded-[4rem] text-center shadow-2xl">
-                <div className="w-20 h-20 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-6">💤</div>
+             <div className="bg-indigo-950 text-white p-8 md:p-10 rounded-[2.5rem] md:rounded-[3rem] text-center shadow-2xl">
+                <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">💤</div>
                 <h2 className="text-xl font-black mb-2 uppercase">Radar Desligado</h2>
                 <button onClick={handleToggleOnline} className="bg-white text-indigo-950 px-10 py-4 rounded-2xl font-black uppercase text-[10px]">Ativar Agora</button>
              </div>
@@ -311,7 +311,7 @@ const DriverView: React.FC<DriverViewProps> = ({
               </div>
            </div>
 
-           <div className="bg-indigo-950 text-white p-10 rounded-[3rem] shadow-2xl space-y-8 relative overflow-hidden">
+           <div className="bg-indigo-950 text-white p-8 md:p-10 rounded-[2.5rem] md:rounded-[3rem] shadow-2xl space-y-6 relative overflow-hidden">
               <div className="text-center">
                  <p className="text-[10px] font-black text-indigo-400 uppercase mb-4 tracking-widest">Resgate PIX</p>
                  <input type="number" className="bg-transparent border-0 font-black text-5xl w-full text-center focus:ring-0 text-white mb-2" value={withdrawAmount || ''} onChange={e => setWithdrawAmount(parseFloat(e.target.value))} placeholder="0,00" />
