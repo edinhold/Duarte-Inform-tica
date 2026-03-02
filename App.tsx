@@ -8,7 +8,6 @@ import DriverView from './views/DriverView';
 import AdminView from './views/AdminView';
 import LoginView from './views/LoginView';
 import AdminLoginView from './views/AdminLoginView';
-import SetupWizardView from './views/SetupWizardView';
 import UserProfileView from './views/UserProfileView';
 import VoiceAssistant from './components/VoiceAssistant';
 import ChatSupport from './components/ChatSupport';
@@ -164,7 +163,17 @@ const App: React.FC = () => {
   };
 
   const handleUpdateStatus = (orderId: string, status: OrderStatus) => {
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+    setOrders(prev => prev.map(o => {
+      if (o.id === orderId) {
+        // Se a corrida for completada, creditar o motorista com o valor líquido
+        if (status === OrderStatus.COMPLETED && o.driverId && o.status !== OrderStatus.COMPLETED) {
+          const netValue = o.total * (1 - (paymentSettings.commissionRate / 100));
+          handleUpdateUser(o.driverId, { walletBalance: (users.find(u => u.id === o.driverId)?.walletBalance || 0) + netValue });
+        }
+        return { ...o, status };
+      }
+      return o;
+    }));
   };
 
   const handleDeleteOrder = (orderId: string) => {
@@ -184,15 +193,17 @@ const App: React.FC = () => {
     setMessages(prev => [...prev, botMsg]);
   };
 
-  const superAdminExists = useMemo(() => users.some(u => u.role === UserRole.SUPER_ADMIN), [users]);
-
-  if (!superAdminExists && !currentUser) {
-    return <SetupWizardView onComplete={(u) => { setUsers(prev => [...prev, u]); setCurrentUser(u); }} />;
-  }
-  
   if (!currentUser) {
     if (showAdminLogin) {
-      return <AdminLoginView onLogin={setCurrentUser} onBack={() => setShowAdminLogin(false)} availableUsers={users} onResetPassword={(e, p) => handleUpdateUser(users.find(u => u.email === e)?.id || '', { password: p })} />;
+      return (
+        <AdminLoginView 
+          onLogin={setCurrentUser} 
+          onBack={() => setShowAdminLogin(false)} 
+          availableUsers={users} 
+          onResetPassword={(e, p) => handleUpdateUser(users.find(u => u.email === e)?.id || '', { password: p })} 
+          onRegisterAdmin={(u) => setUsers(p => [...p, u])}
+        />
+      );
     }
     return <LoginView onLogin={setCurrentUser} onAdminAccess={() => setShowAdminLogin(true)} availableUsers={users} onRegister={(u) => setUsers(p => [...p, u])} />;
   }

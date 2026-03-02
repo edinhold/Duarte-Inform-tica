@@ -218,7 +218,7 @@ const DriverView: React.FC<DriverViewProps> = ({
                           <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[9px] font-black uppercase">{order.type}</span>
                           <div className="text-right">
                             <p className="text-2xl font-black text-green-600">R$ {getEarningValue(order.total).toFixed(2)}</p>
-                            <p className="text-[8px] font-black text-indigo-300 uppercase">Líquido</p>
+                            <p className="text-[8px] font-black text-indigo-300 uppercase">Líquido (Bruto: R$ {order.total.toFixed(2)})</p>
                           </div>
                        </div>
                        <div className="space-y-3 mb-8">
@@ -258,6 +258,7 @@ const DriverView: React.FC<DriverViewProps> = ({
                    </div>
                    <div className="text-right">
                       <p className="text-xl font-black text-green-400">R$ {getEarningValue(activeOrder.total).toFixed(2)}</p>
+                      <p className="text-[8px] font-black text-indigo-400 uppercase">Líquido (Bruto: R$ {activeOrder.total.toFixed(2)})</p>
                    </div>
                 </div>
                 <button onClick={() => handleFinishOrder(activeOrder.id)} className="w-full bg-green-600 py-4 rounded-2xl font-black text-[10px] uppercase">Finalizar Corrida</button>

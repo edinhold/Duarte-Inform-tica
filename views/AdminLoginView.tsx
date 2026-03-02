@@ -1,25 +1,35 @@
 
 import React, { useState } from 'react';
-import { User, UserRole } from '../types';
+import { User, UserRole, UserStatus } from '../types';
 
 interface AdminLoginViewProps {
   onLogin: (user: User) => void;
   onBack: () => void;
   availableUsers: User[];
   onResetPassword: (email: string, newPass: string) => void;
+  onRegisterAdmin: (user: User) => void;
 }
 
-const AdminLoginView: React.FC<AdminLoginViewProps> = ({ onLogin, onBack, availableUsers, onResetPassword }) => {
+const AdminLoginView: React.FC<AdminLoginViewProps> = ({ onLogin, onBack, availableUsers, onResetPassword, onRegisterAdmin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showRecovery, setShowRecovery] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
   
   // Estados de recuperação
   const [recoveryEmail, setRecoveryEmail] = useState('');
   const [recoveryStep, setRecoveryStep] = useState<'EMAIL' | 'CODE' | 'NEW_PASS'>('EMAIL');
   const [newPass, setNewPass] = useState('');
+
+  // Estados de Cadastro Admin
+  const [regData, setRegData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    document: ''
+  });
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,6 +52,29 @@ const AdminLoginView: React.FC<AdminLoginViewProps> = ({ onLogin, onBack, availa
     }, 1200);
   };
 
+  const handleRegister = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+
+    const newUser: User = {
+      id: `ADM-${Date.now()}`,
+      name: regData.name,
+      email: regData.email,
+      password: regData.password,
+      document: regData.document,
+      role: UserRole.ADMIN,
+      status: UserStatus.ACTIVE,
+      createdAt: new Date().toISOString(),
+      walletBalance: 0
+    };
+
+    setTimeout(() => {
+      onRegisterAdmin(newUser);
+      onLogin(newUser);
+      setIsLoading(false);
+    }, 1000);
+  };
+
   const handleRecovery = (e: React.FormEvent) => {
     e.preventDefault();
     if (recoveryStep === 'EMAIL') {
@@ -57,6 +90,44 @@ const AdminLoginView: React.FC<AdminLoginViewProps> = ({ onLogin, onBack, availa
       setRecoveryStep('EMAIL');
     }
   };
+
+  if (isRegistering) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-indigo-950">
+        <div className="w-full max-w-md bg-white rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in duration-500 border border-indigo-900/50 p-10 md:p-12 space-y-8">
+          <div className="text-center space-y-2">
+            <div className="w-16 h-16 bg-indigo-950 rounded-3xl flex items-center justify-center text-white font-black text-3xl shadow-xl mx-auto mb-6 border-4 border-indigo-500/20">D</div>
+            <h1 className="text-2xl font-black text-indigo-950 tracking-tight uppercase">Novo Administrador</h1>
+            <p className="text-indigo-300 text-[10px] font-bold tracking-widest uppercase">CADASTRO DE GESTÃO</p>
+          </div>
+
+          <form onSubmit={handleRegister} className="space-y-4">
+            <div>
+              <label className="block text-[10px] font-bold text-indigo-300 uppercase tracking-widest mb-1 ml-2">Nome Completo</label>
+              <input required className="w-full bg-indigo-50/50 border border-indigo-100 rounded-2xl px-6 py-4 font-medium text-indigo-900" value={regData.name} onChange={e => setRegData({...regData, name: e.target.value})} placeholder="Nome do Gestor" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-indigo-300 uppercase tracking-widest mb-1 ml-2">E-mail Corporativo</label>
+              <input required type="email" className="w-full bg-indigo-50/50 border border-indigo-100 rounded-2xl px-6 py-4 font-medium text-indigo-900" value={regData.email} onChange={e => setRegData({...regData, email: e.target.value})} placeholder="admin@duarte.com" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-indigo-300 uppercase tracking-widest mb-1 ml-2">CPF/Documento</label>
+              <input required className="w-full bg-indigo-50/50 border border-indigo-100 rounded-2xl px-6 py-4 font-medium text-indigo-900" value={regData.document} onChange={e => setRegData({...regData, document: e.target.value})} placeholder="000.000.000-00" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-indigo-300 uppercase tracking-widest mb-1 ml-2">Senha de Acesso</label>
+              <input required type="password" className="w-full bg-indigo-50/50 border border-indigo-100 rounded-2xl px-6 py-4 font-medium text-indigo-900" value={regData.password} onChange={e => setRegData({...regData, password: e.target.value})} placeholder="••••••••" />
+            </div>
+
+            <button type="submit" disabled={isLoading} className="w-full bg-indigo-950 text-white py-5 rounded-2xl font-black text-lg shadow-xl hover:bg-black transition-all mt-4">
+              {isLoading ? 'Cadastrando...' : 'Criar Conta Admin'}
+            </button>
+            <button type="button" onClick={() => setIsRegistering(false)} className="w-full text-[10px] font-black text-indigo-300 uppercase tracking-widest">Voltar ao Login</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-indigo-950">
@@ -156,6 +227,7 @@ const AdminLoginView: React.FC<AdminLoginViewProps> = ({ onLogin, onBack, availa
               >
                 {isLoading ? 'Sincronizando...' : 'Entrar no Sistema'}
               </button>
+              <button type="button" onClick={() => setIsRegistering(true)} className="w-full text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:text-indigo-800 transition-colors">Cadastrar Novo Administrador</button>
             </div>
           </form>
 

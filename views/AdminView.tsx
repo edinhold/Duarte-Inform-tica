@@ -216,7 +216,17 @@ const AdminView: React.FC<AdminViewProps> = ({
                     <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest">Taxas e prazos para motoristas</p>
                  </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-indigo-400 uppercase ml-2 tracking-widest">Comissão por Corrida (%)</label>
+                    <input 
+                       type="number" 
+                       className="w-full bg-indigo-50 border-0 rounded-2xl p-5 font-black text-indigo-950" 
+                       value={paymentSettings.commissionRate} 
+                       onChange={e => onUpdatePaymentSettings({...paymentSettings, commissionRate: parseFloat(e.target.value)})} 
+                    />
+                    <p className="text-[9px] text-indigo-300 italic ml-2">Percentual que a plataforma retém de cada corrida.</p>
+                 </div>
                  <div className="space-y-2">
                     <label className="text-[10px] font-black text-indigo-400 uppercase ml-2 tracking-widest">Taxa de Antecipação (%)</label>
                     <input 
@@ -305,6 +315,8 @@ const AdminView: React.FC<AdminViewProps> = ({
                           <th className="pb-4">Origem</th>
                           <th className="pb-4">Destino</th>
                           <th className="pb-4">Valor Bruto</th>
+                          <th className="pb-4">Comissão ({paymentSettings.commissionRate}%)</th>
+                          <th className="pb-4">Líquido</th>
                           <th className="pb-4 text-right">Ações</th>
                        </tr>
                     </thead>
@@ -325,6 +337,8 @@ const AdminView: React.FC<AdminViewProps> = ({
                                 <td className="py-4 text-xs font-medium text-indigo-950 max-w-[150px] truncate" title={origin}>{origin}</td>
                                 <td className="py-4 text-xs font-medium text-indigo-950 max-w-[150px] truncate" title={dest}>{dest}</td>
                                 <td className="py-4 font-black text-indigo-950 text-xs">R$ {order.total.toFixed(2)}</td>
+                                <td className="py-4 font-bold text-red-500 text-xs">- R$ {(order.total * (paymentSettings.commissionRate / 100)).toFixed(2)}</td>
+                                <td className="py-4 font-black text-green-600 text-xs">R$ {(order.total * (1 - (paymentSettings.commissionRate / 100))).toFixed(2)}</td>
                                 <td className="py-4 text-right">
                                    <button 
                                       onClick={() => { if(window.confirm('Excluir este registro permanentemente?')) onDeleteOrder(order.id) }} 
